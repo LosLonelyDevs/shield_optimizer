@@ -53,6 +53,32 @@ pub(crate) fn classify_connect_output(combined: &str) -> ConnectOutcome {
     }
 }
 
+/// Parse `adb mdns services` into a list of `ip:port` addresses. Android 11+
+/// wireless debugging advertises its endpoint over mDNS on a random port, so
+/// the subnet sweep (which probes :5555) misses it; this picks those up. Output
+/// looks like:
+///   List of discovered mdns services
+///   adb-XXXX-YYYY  _adb-tls-connect._tcp  192.168.1.50:39123
+/// We keep any whitespace token shaped like an IPv4 `a.b.c.d:port`.
+pub(crate) fn parse_mdns_services(stdout: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        for tok in line.split_whitespace() {
+            if let Some((ip, port)) = tok.rsplit_once(':') {
+                let port_ok = !port.is_empty() && port.chars().all(|c| c.is_ascii_digit());
+                let ip_ok =
+                    ip.split('.').count() == 4 && ip.split('.').all(|o| o.parse::<u8>().is_ok());
+                if port_ok && ip_ok {
+                    out.push(tok.to_string());
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// A nonzero exit surfaces as `Err` from the driver and counts as failed.
 async fn adb_connect(adb: &dyn AdbDriver, target: &str) -> ConnectOutcome {
     match adb.raw(&["connect", target]).await {
@@ -81,7 +107,7 @@ pub async fn scan_network(state: State<'_, AppState>) -> Result<ScanResult, Stri
     let subnet_label = format!("{}.{}.{}", prefix[0], prefix[1], prefix[2]);
 
     let hits = scan_subnet(prefix).await;
-    let found: Vec<String> = hits.iter().map(|h| h.ip.clone()).collect();
+    let mut found: Vec<String> = hits.iter().map(|h| h.ip.clone()).collect();
 
     let adb = state.adb_snapshot().await;
 
@@ -112,7 +138,23 @@ pub async fn scan_network(state: State<'_, AppState>) -> Result<ScanResult, Stri
         }
     }
 
-    let message = summary_message(&subnet_label, hits.len(), &connected, &unauthorized);
+    // Also pick up Android 11+ wireless-debugging endpoints advertised over
+    // mDNS — they listen on a random port the :5555 subnet sweep can't see.
+    if let Ok(out) = adb.raw(&["mdns", "services"]).await {
+        for addr in parse_mdns_services(&out.stdout) {
+            if found.contains(&addr) {
+                continue;
+            }
+            found.push(addr.clone());
+            match adb_connect(adb.as_ref(), &addr).await {
+                ConnectOutcome::Connected => connected.push(addr),
+                ConnectOutcome::Unauthorized => unauthorized.push(addr),
+                ConnectOutcome::Failed => failed.push(addr),
+            }
+        }
+    }
+
+    let message = summary_message(&subnet_label, found.len(), &connected, &unauthorized);
 
     Ok(ScanResult {
         subnet: Some(subnet_label),
@@ -220,5 +262,21 @@ mod tests {
     fn summary_plain_when_all_connected() {
         let msg = summary_message("10.0.0", 1, &["10.0.0.5".into()], &[]);
         assert_eq!(msg, "Scanned 10.0.0.x — found 1 device, connected 1.");
+    }
+
+    #[test]
+    fn parses_mdns_addresses() {
+        let out = "List of discovered mdns services\n\
+                   adb-abc123-XyZ  _adb-tls-connect._tcp.  192.168.1.50:39123\n\
+                   adb-def456-QwE  _adb-tls-pairing._tcp.  192.168.1.51:41999\n";
+        let got = parse_mdns_services(out);
+        assert_eq!(got, vec!["192.168.1.50:39123", "192.168.1.51:41999"]);
+    }
+
+    #[test]
+    fn mdns_ignores_non_address_lines() {
+        assert!(parse_mdns_services("List of discovered mdns services\n").is_empty());
+        // A bare hostname:label is not an IPv4:port.
+        assert!(parse_mdns_services("name _adb._tcp. notanip:5555").is_empty());
     }
 }

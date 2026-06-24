@@ -4,7 +4,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "$lib/api";
   import sideloadCatalog from "$lib/sideload-catalog.json";
-  import type { DiscoveredApk } from "$lib/types";
+  import type { DiscoveredApk, QuickAppRow } from "$lib/types";
 
   let { serial }: { serial: string } = $props();
 
@@ -25,6 +25,17 @@
   /// package id → state, for the discovered APKs, so each row can say whether
   /// it's already installed on this device.
   let apkInstallState = $state<Record<string, "enabled" | "disabled" | "missing">>({});
+
+  // Quick-install catalog (arch-aware auto-download).
+  let quickApps = $state<QuickAppRow[]>([]);
+  let quickBusy = $state<string | null>(null);
+  let quickMsg = $state("");
+  let quickMsgPkg = $state<string | null>(null);
+  let quickOk = $state(false);
+
+  let shizukuBusy = $state(false);
+  let shizukuMsg = $state("");
+  let shizukuOk = $state(false);
 
   async function pickAndInstallApk() {
     const selected = await openDialog({
@@ -115,9 +126,51 @@
     }
   }
 
+  async function loadQuickApps() {
+    try {
+      quickApps = await api.listQuickApps(serial);
+    } catch {
+      // Non-fatal — the rest of the tab still works without the catalog.
+    }
+  }
+
+  async function installQuick(pkg: string) {
+    quickBusy = pkg;
+    quickMsgPkg = pkg;
+    quickMsg = "";
+    quickOk = false;
+    try {
+      const r = await api.installQuickApp(serial, pkg);
+      quickOk = r.ok;
+      quickMsg = r.ok ? "Installed." : installFailureSummary(r.message);
+      if (r.ok) await loadQuickApps();
+    } catch (e) {
+      quickMsg = String(e);
+    } finally {
+      quickBusy = null;
+    }
+  }
+
+  async function setupShizuku() {
+    shizukuBusy = true;
+    shizukuMsg = "";
+    shizukuOk = false;
+    try {
+      const r = await api.setupShizuku(serial);
+      shizukuOk = r.ok;
+      shizukuMsg = r.message;
+      await loadQuickApps();
+    } catch (e) {
+      shizukuMsg = String(e);
+    } finally {
+      shizukuBusy = false;
+    }
+  }
+
   onMount(() => {
     const last = localStorage.getItem("shieldopt.lastApkFolder");
     if (last) scanApkFolder(last);
+    loadQuickApps();
   });
 </script>
 
@@ -185,6 +238,60 @@
     <div class="install-result" class:ok={sideloadOk} class:bad={!sideloadOk}>
       <span>{sideloadOk ? "✓" : "✕"} {sideloadResult}</span>
       {#if sideloadHint}<span class="muted small"> — {sideloadHint}</span>{/if}
+    </div>
+  {/if}
+
+  {#if quickApps.length > 0}
+    <div class="quick-install">
+      <h3>Quick install — auto-download for this device</h3>
+      <p class="muted small">
+        We fetch the build that matches your device's CPU from the official source and
+        install it. This briefly turns off Play Protect (which flags these apps) and
+        restores it afterward.
+      </p>
+      <ul class="catalog-list">
+        {#each quickApps as q (q.package)}
+          <li>
+            <div>
+              <div class="apk-name">{q.name}</div>
+              <div class="muted small">{q.description}</div>
+              <div class="muted small mono">
+                {q.package}
+                {#if q.installed}<span class="tag installed">INSTALLED</span>{/if}
+              </div>
+              {#if quickMsgPkg === q.package && quickMsg}
+                <div class="install-result" class:ok={quickOk} class:bad={!quickOk}>
+                  <span>{quickOk ? "✓" : "✕"} {quickMsg}</span>
+                </div>
+              {/if}
+            </div>
+            <button
+              class="small-action primary"
+              onclick={() => installQuick(q.package)}
+              disabled={quickBusy !== null}
+            >
+              {quickBusy === q.package ? "Installing…" : q.installed ? "Reinstall" : "Install"}
+            </button>
+          </li>
+        {/each}
+      </ul>
+      <div class="shizuku-row">
+        <div>
+          <div class="apk-name">Shizuku</div>
+          <div class="muted small">
+            Install Shizuku and start its service so other apps can use elevated ADB
+            permissions — no root needed. The service stops on reboot; re-run after a restart.
+          </div>
+          {#if shizukuMsg}
+            <div class="install-result" class:ok={shizukuOk} class:bad={!shizukuOk}>
+              <span>{shizukuOk ? "✓" : "✕"} {shizukuMsg}</span>
+            </div>
+          {/if}
+        </div>
+        <button class="small-action" onclick={setupShizuku} disabled={shizukuBusy}>
+          {shizukuBusy ? "Setting up…" : "Set up Shizuku"}
+        </button>
+      </div>
     </div>
   {/if}
 
@@ -305,6 +412,28 @@
     font-family: ui-monospace, monospace;
     font-size: 0.88rem;
     word-break: break-all;
+  }
+  .quick-install {
+    margin-top: 1.5rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+  }
+  .quick-install h3 {
+    margin: 0 0 0.3rem;
+    font-size: 1rem;
+  }
+  .shizuku-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0 0;
+    margin-top: 0.4rem;
+    border-top: 1px dashed var(--border);
+  }
+  .shizuku-row button {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .sideload-catalog {
     margin-top: 1.5rem;

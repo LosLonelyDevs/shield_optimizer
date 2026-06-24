@@ -15,6 +15,7 @@ const COMMON_JSON: &str = include_str!("../../../data/app-lists/common.json");
 const SHIELD_JSON: &str = include_str!("../../../data/app-lists/shield.json");
 const GOOGLETV_JSON: &str = include_str!("../../../data/app-lists/googletv.json");
 const KNOWN_NAMES_JSON: &str = include_str!("../../../data/app-lists/known-names.json");
+const QUICK_INSTALL_JSON: &str = include_str!("../../../data/app-lists/quick-install.json");
 
 /// Load the bundled defaults. Returns a useful error string if any of the
 /// embedded JSON files fail to parse — that's a build-time mistake worth
@@ -31,6 +32,19 @@ pub fn load_embedded_app_lists() -> Result<AppListBundle, String> {
         shield,
         googletv,
     })
+}
+
+/// Load the quick-install catalog (popular apps the installer can auto-download
+/// and sideload). A parse error is non-fatal — log it and return an empty list
+/// so the rest of the app still works.
+pub fn load_quick_apps() -> Vec<super::quick_install::QuickApp> {
+    match serde_json::from_str(QUICK_INSTALL_JSON) {
+        Ok(apps) => apps,
+        Err(e) => {
+            tracing::error!(error = %e, "quick-install.json parse error; using empty list");
+            Vec::new()
+        }
+    }
 }
 
 /// Load the curated package→friendly-name map for popular sideloads. Display

@@ -11,6 +11,19 @@
 
   let { serial }: { serial: string } = $props();
 
+  // Best-practice recommendation per setting — the value we'd pick and why,
+  // surfaced inline so users don't have to guess. Grounded in the Display/Audio
+  // best-practices guide (per-app refresh + seamless switching over the blunt
+  // global toggles).
+  const REC = {
+    hdmi: "1", // CEC on: Shield powers the TV on/off and switches to its input.
+    matchContent: "1", // Seamless only: matches fps with no black-screen flash.
+    bgLimit: "2", // ≤2: frees RAM, stays snappy (resets to Standard on reboot).
+    longPress: "300", // 300 ms: snappier OK long-press than the 400 ms default.
+    animations: "0.5", // Fast: noticeably quicker UI without feeling broken.
+    dns: "opportunistic", // Automatic: encrypted DNS when offered, nothing to break.
+  };
+
   let tweaks = $state<TweaksState | null>(null);
   let tweaksLoading = $state(false);
   let tweaksErr = $state<string | null>(null);
@@ -306,6 +319,7 @@
         NextDNS, Cloudflare…). A bad custom host is auto-reverted to Automatic so
         the device never loses DNS.
       </p>
+      <p class="rec">★ Recommended: <strong>Automatic</strong> — encrypts DNS when your network offers it, with nothing to break. Use <em>Custom</em> with <code>dns.adguard.com</code> (or NextDNS) for network-wide ad/tracker blocking.</p>
       <div class="tweak-row">
         <div>
           <div class="current">Current: <strong>{dnsModeLabel(privateDns.mode, privateDns.hostname)}</strong></div>
@@ -321,6 +335,7 @@
           <button
             class="small-action"
             class:active={privateDns.mode === "opportunistic"}
+            class:recommended={REC.dns === "opportunistic"}
             disabled={dnsBusy}
             onclick={() => applyPrivateDns("opportunistic")}
           >Automatic</button>
@@ -351,6 +366,7 @@
       Master switch plus three sub-toggles. Disabling the master typically also
       turns off the sub-controls.
     </p>
+    <p class="rec">★ Recommended: <strong>On</strong> for all — lets the Shield power your TV on/off and switch to its HDMI input automatically. Turn off only if you get CEC conflicts (e.g. the TV grabbing input from another device).</p>
     <div class="tweak-grid">
       {#each [
         { key: "hdmi_control_enabled", label: "Master (control on/off)", value: tweaks.hdmi_control_enabled },
@@ -368,6 +384,7 @@
             <button
               class="small-action"
               class:active={row.value === "1"}
+              class:recommended={REC.hdmi === "1"}
               disabled={tweaksActionBusy === row.key}
               onclick={() => writeTweak("global", row.key, "1", row.key)}
             >On</button>
@@ -392,6 +409,7 @@
       Lets apps switch refresh rate to match video content (24/25/30/60 Hz). Seamless
       only avoids visible black flashes during the switch.
     </p>
+    <p class="rec">★ Recommended: <strong>Seamless only</strong> — matches the panel to video fps without the black-screen flash that <em>Always</em> causes on every switch. For true judder-free 24p movies, use the per-app Refresh Rate tool on the <strong>Display</strong> tab instead of this blunt global toggle. Pick <em>Never</em> only if mode switches glitch your TV.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{matchContentLabel(tweaks.match_content_frame_rate)}</strong></div>
@@ -406,6 +424,7 @@
           <button
             class="small-action"
             class:active={tweaks.match_content_frame_rate === opt.v}
+            class:recommended={REC.matchContent === opt.v}
             disabled={tweaksActionBusy === "match_content_frame_rate"}
             onclick={() => writeTweak("secure", "match_content_frame_rate", opt.v, "match_content_frame_rate")}
           >{opt.label}</button>
@@ -425,6 +444,7 @@
       resets this to Standard on every reboot (a platform limitation, not a bug), so
       you'll need to re-apply it after a restart.
     </p>
+    <p class="rec">★ Recommended: <strong>≤ 2</strong> — frees RAM and keeps the UI snappy without starving apps you actually use. Re-apply after each reboot. Leave on <em>Standard</em> if you never hit slowdowns.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{bgLimitLabel(tweaks.background_process_limit)}</strong></div>
@@ -447,6 +467,7 @@
           <button
             class="small-action"
             class:active={tweaks.background_process_limit === opt.v}
+            class:recommended={REC.bgLimit === opt.v}
             disabled={tweaksActionBusy === "background_process_limit"}
             onclick={() => writeTweak("global", "background_process_limit", opt.v, "background_process_limit")}
           >{opt.label}</button>
@@ -459,6 +480,7 @@
       How long the remote OK button has to be held to register a long-press. Default
       is 400ms; 300ms feels snappier.
     </p>
+    <p class="rec">★ Recommended: <strong>300 ms</strong> — quicker long-press response on the remote. Bump to 400/500 ms if you trigger long-presses by accident.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{longPressLabel(tweaks.long_press_timeout)}</strong></div>
@@ -469,6 +491,7 @@
           <button
             class="small-action"
             class:active={tweaks.long_press_timeout === v}
+            class:recommended={REC.longPress === v}
             disabled={tweaksActionBusy === "long_press_timeout"}
             onclick={() => writeTweak("secure", "long_press_timeout", v, "long_press_timeout")}
           >{v} ms</button>
@@ -486,6 +509,7 @@
       Sets all three animation scales (window / transition / animator) at once.
       0.5× is a noticeable speedup; 0× disables them entirely.
     </p>
+    <p class="rec">★ Recommended: <strong>Fast (0.5×)</strong> — the UI feels noticeably quicker while still showing transitions. Use <em>Off</em> for maximum speed (can feel abrupt) or <em>Default</em> to restore stock.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{animationsLabel(tweaks)}</strong></div>
@@ -504,6 +528,7 @@
           <button
             class="small-action"
             class:active={tweaks.window_animation_scale === opt.v && tweaks.transition_animation_scale === opt.v && tweaks.animator_duration_scale === opt.v}
+            class:recommended={REC.animations === opt.v}
             disabled={tweaksActionBusy === "animations"}
             onclick={() => setAnimationScale(opt.v)}
           >{opt.label}</button>
@@ -612,6 +637,29 @@
     background: var(--accent-strong);
     color: #fff;
     border-color: var(--accent);
+  }
+  /* The best-practice pick. A ★ marks the button; an active+recommended button
+     keeps the filled accent and flips the star white for contrast. */
+  .small-action.recommended {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .small-action.recommended::before {
+    content: "★ ";
+    color: var(--accent);
+  }
+  .small-action.recommended.active::before {
+    color: #fff;
+  }
+  .rec {
+    font-size: 0.82rem;
+    color: var(--accent);
+    margin: 0.15rem 0 0.45rem;
+    line-height: 1.45;
+  }
+  .rec strong {
+    color: var(--accent);
+    font-weight: 600;
   }
   .dns-custom {
     display: flex;

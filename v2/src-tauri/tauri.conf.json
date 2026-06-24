@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Shield Optimizer",
+        "title": "Android TV Optimizer",
         "width": 1100,
         "height": 760,
         "minWidth": 720,

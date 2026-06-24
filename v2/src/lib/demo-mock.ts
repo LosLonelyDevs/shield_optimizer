@@ -307,6 +307,24 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return "/Users/you/Library/Application Support/com.shieldoptimizer.app/snapshots";
     case "list_apks_in_folder":
       return [];
+    case "system_info":
+      return {
+        battery_percent: null,
+        input_method: "com.google.android.leanbackkeyboard/.LeanbackImeService",
+        play_protect_enabled: true,
+        user_rotation: "0",
+        screen_off_timeout: "1800000",
+        location_mode: "0",
+        developer_options: "1",
+        doze_enabled: "1",
+      };
+    case "list_quick_apps":
+      return [
+        { name: "SmartTube", package: "com.teamsmart.videomanager.tv", description: "Ad-free YouTube for Android TV — SponsorBlock, no ads, 4K/60.", source: "github", repo: "yuliskov/SmartTube", asset_match: "smarttube_stable", fallback_url: null, installed: true },
+        { name: "Aurora Store", package: "com.aurora.store", description: "Open-source Play Store client — install/update without a Google account.", source: "gitlab", repo: "AuroraOSS/AuroraStore", asset_match: null, fallback_url: null, installed: false },
+        { name: "Obtainium", package: "dev.imranr.obtainium", description: "Install and auto-update apps straight from their GitHub/GitLab releases.", source: "github", repo: "ImranR98/Obtainium", asset_match: null, fallback_url: null, installed: false },
+        { name: "AdGuard for Android TV", package: "com.adguard.android.tv", description: "System-wide ad and tracker blocking via a local VPN.", source: "url", repo: null, asset_match: null, fallback_url: "https://agrd.io/tvapk", installed: false },
+      ];
     case "preview_apply":
       return {
         packages_to_disable: [

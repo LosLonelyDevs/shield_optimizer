@@ -33,10 +33,12 @@
   import OptimizeTab from "$lib/components/OptimizeTab.svelte";
   import DisplayTab from "$lib/components/DisplayTab.svelte";
   import AudioTab from "$lib/components/AudioTab.svelte";
+  import SystemTab from "$lib/components/SystemTab.svelte";
+  import ConsoleTab from "$lib/components/ConsoleTab.svelte";
 
   let serial = $derived(decodeURIComponent($page.params.serial ?? ""));
 
-  type Tab = "overview" | "health" | "launcher" | "apps" | "optimize" | "tweaks" | "display" | "audio" | "remote" | "files" | "snapshot" | "sideload";
+  type Tab = "overview" | "health" | "launcher" | "apps" | "optimize" | "tweaks" | "display" | "audio" | "system" | "remote" | "files" | "snapshot" | "sideload" | "console";
   let activeTab = $state<Tab>("overview");
 
   let device = $state<Device | null>(null);
@@ -65,7 +67,13 @@
   let screenshotBusy = $state(false);
   let screenshot = $state<ScreenshotResult | null>(null);
 
+  let recordingBusy = $state(false);
+  let recording = $state(false);
+  let recordMsg = $state("");
+  let recordPath = $state<string | null>(null);
+
   let trimBusy = $state(false);
+  let killBusy = $state(false);
   let trimMessage = $state("");
 
   let launchers = $state<LauncherStatus[]>([]);
@@ -180,6 +188,22 @@
       trimMessage = String(e);
     } finally {
       trimBusy = false;
+    }
+  }
+
+  async function killBackground() {
+    killBusy = true;
+    trimMessage = "";
+    try {
+      const r = await api.killAllBackground(serial);
+      trimMessage = r.ok
+        ? "Background apps killed — RAM frees up now; apps restart on next use."
+        : r.message.trim();
+      if (r.ok) await loadHealth();
+    } catch (e) {
+      trimMessage = String(e);
+    } finally {
+      killBusy = false;
     }
   }
 
@@ -341,6 +365,40 @@
         patchOtherState(pkg, false);
         invalidateDeviceCaches();
       }
+    } catch (e) {
+      appActionMessage = `${pkg}: ${e}`;
+    } finally {
+      appActionBusy = null;
+    }
+  }
+
+  async function clearCacheFor(pkg: string) {
+    appActionBusy = pkg;
+    appActionMessage = "";
+    try {
+      const r = await api.clearAppCache(serial, pkg);
+      appActionMessage = `${pkg}: ${r.message.trim() || (r.ok ? "cache cleared" : "failed")}`;
+      if (r.ok) invalidateDeviceCaches();
+    } catch (e) {
+      appActionMessage = `${pkg}: ${e}`;
+    } finally {
+      appActionBusy = null;
+    }
+  }
+
+  async function clearDataFor(pkg: string) {
+    if (
+      !confirm(
+        `Clear all data for ${pkg}?\n\nThis wipes its accounts, settings, and downloads — the app resets to a fresh install. Not reversible.`,
+      )
+    )
+      return;
+    appActionBusy = pkg;
+    appActionMessage = "";
+    try {
+      const r = await api.clearAppData(serial, pkg);
+      appActionMessage = `${pkg}: ${r.message.trim() || (r.ok ? "data cleared" : "failed")}`;
+      if (r.ok) invalidateDeviceCaches();
     } catch (e) {
       appActionMessage = `${pkg}: ${e}`;
     } finally {
@@ -973,6 +1031,52 @@
     }
   }
 
+  async function toggleRecording() {
+    recordingBusy = true;
+    headerActionMsg = "";
+    try {
+      if (!recording) {
+        const r = await api.startRecording(serial);
+        recording = r.ok;
+        recordMsg = r.message;
+        recordPath = null;
+      } else {
+        const r = await api.stopRecording(serial);
+        recording = false;
+        recordMsg = r.message;
+        recordPath = r.path;
+      }
+    } catch (e) {
+      headerActionMsg = `Recording: ${e}`;
+      recording = false;
+    } finally {
+      recordingBusy = false;
+    }
+  }
+
+  async function revealRecording() {
+    if (!recordPath) return;
+    try {
+      await revealItemInDir(recordPath);
+    } catch (e) {
+      headerActionMsg = `Open folder failed: ${e}`;
+    }
+  }
+
+  let mirrorBusy = $state(false);
+  async function mirrorScreen() {
+    mirrorBusy = true;
+    headerActionMsg = "";
+    try {
+      const r = await api.mirrorScreen(serial);
+      headerActionMsg = r.message;
+    } catch (e) {
+      headerActionMsg = `Mirror: ${e}`;
+    } finally {
+      mirrorBusy = false;
+    }
+  }
+
   async function disconnectAndLeave() {
     if (device?.connection === "usb") {
       if (!confirm("This is a USB device — disconnect will only forget it from the ADB server until you replug. Continue?")) return;
@@ -1145,6 +1249,21 @@
           {screenshotBusy ? "Capturing…" : "Screenshot"}
         </button>
         <button
+          class:recording={recording}
+          onclick={toggleRecording}
+          disabled={recordingBusy}
+          title="Record the TV screen (screenrecord) and save the MP4 to this computer. Single clip caps at ~3 min; DRM/protected video records black."
+        >
+          {recordingBusy ? "Working…" : recording ? "■ Stop recording" : "● Record"}
+        </button>
+        <button
+          onclick={mirrorScreen}
+          disabled={mirrorBusy}
+          title="Open a scrcpy mirror window to view & control the TV (requires scrcpy on your PATH)"
+        >
+          {mirrorBusy ? "Opening…" : "Mirror"}
+        </button>
+        <button
           class="small-action subtle"
           onclick={disconnectAndLeave}
           disabled={disconnectBusy}
@@ -1167,6 +1286,15 @@
         </div>
       </div>
     {/if}
+    {#if recordMsg}
+      <div class="screenshot-meta">
+        <span class="muted small mono">{recordMsg}</span>
+        {#if recordPath}
+          <button class="small-action" onclick={revealRecording}>Open folder</button>
+        {/if}
+        <button class="small-action subtle" onclick={() => { recordMsg = ""; recordPath = null; }}>Dismiss</button>
+      </div>
+    {/if}
   </header>
 
   <div class="tabs" role="tablist" aria-label="Device sections">
@@ -1179,10 +1307,12 @@
       { id: "tweaks", label: "Tweaks" },
       { id: "display", label: "Display" },
       { id: "audio", label: "Audio" },
+      { id: "system", label: "System" },
       { id: "remote", label: "Remote" },
       { id: "files", label: "Files" },
       { id: "sideload", label: "Install APK" },
       { id: "snapshot", label: "Snapshot" },
+      { id: "console", label: "Console" },
     ] as t (t.id)}
       <button
         role="tab"
@@ -1266,6 +1396,13 @@
             title="pm trim-caches — clears every app's cache; caches rebuild on next launch"
           >
             {trimBusy ? "Clearing…" : "Clear caches"}
+          </button>
+          <button
+            onclick={killBackground}
+            disabled={killBusy}
+            title="am kill-all — frees RAM by killing background apps; they restart on next use"
+          >
+            {killBusy ? "Killing…" : "Kill background"}
           </button>
           <button onclick={loadHealth} disabled={reportLoading}>
             {reportLoading ? "Loading…" : "Refresh"}
@@ -1365,6 +1502,14 @@
                       {:else}
                         Force stop
                       {/if}
+                    </button>
+                    <button
+                      class="small-action subtle"
+                      onclick={() => clearCacheFor(m.package)}
+                      disabled={appActionBusy === m.package}
+                      title="pm clear-cache {m.package} — drops cached files; safe, rebuilds on next launch"
+                    >
+                      Clear cache
                     </button>
                     {#if blocked}
                       <span class="muted small" title={safety.reason}>Protected</span>
@@ -1738,6 +1883,8 @@
                     <td class="center tools-cell">
                       <button class="small-action subtle" onclick={() => backupApkFor(o.package)} disabled={appActionBusy === o.package} title="Save this app's APK(s) to a folder on this computer">Backup</button>
                       <button class="small-action subtle" onclick={() => startClone(o.package)} disabled={appActionBusy === o.package} title="Install this app onto another connected device">Copy to…</button>
+                      <button class="small-action subtle" onclick={() => clearCacheFor(o.package)} disabled={appActionBusy === o.package} title="pm clear-cache — drops cached files; safe, rebuilds on next launch">Clear cache</button>
+                      <button class="small-action subtle danger" onclick={() => clearDataFor(o.package)} disabled={appActionBusy === o.package} title="pm clear — wipes accounts, settings, downloads; resets to fresh install (not reversible)">Clear data</button>
                     </td>
                   </tr>
                 {/each}
@@ -1857,6 +2004,16 @@
   {#if visited.audio}
     <div hidden={activeTab !== "audio"}>
       <AudioTab {serial} />
+    </div>
+  {/if}
+  {#if visited.system}
+    <div hidden={activeTab !== "system"}>
+      <SystemTab {serial} />
+    </div>
+  {/if}
+  {#if visited.console}
+    <div hidden={activeTab !== "console"}>
+      <ConsoleTab {serial} />
     </div>
   {/if}
   {#if visited.files}
@@ -2371,6 +2528,11 @@
   }
   .warn-text {
     color: var(--warn);
+  }
+  button.recording {
+    background: var(--danger-surface);
+    color: var(--danger-text);
+    border-color: var(--danger-text);
   }
   .screenshot-preview {
     margin-top: 0.8rem;

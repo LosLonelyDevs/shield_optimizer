@@ -98,6 +98,12 @@ async function captureScreens(page, shot) {
     await page.waitForTimeout(300);
     await shot("audio");
 
+    // 7d. System tab.
+    await page.locator("#tab-system").click();
+    await page.getByText("Device Info", { exact: false }).first().waitFor();
+    await page.waitForTimeout(300);
+    await shot("system");
+
     // 8. Remote.
     await page.locator("#tab-remote").click();
     await page.getByText("Live typing", { exact: false }).first().waitFor();
@@ -117,6 +123,12 @@ async function captureScreens(page, shot) {
     await page.locator("#tab-snapshot").click();
     await page.waitForTimeout(400);
     await shot("snapshot");
+
+    // 10b. ADB Console (power-user shell).
+    await page.locator("#tab-console").click();
+    await page.getByText("ADB Console", { exact: false }).first().waitFor();
+    await page.waitForTimeout(300);
+    await shot("console");
 
     // 11. Global snapshots page.
     await page.goto(`${BASE}/snapshots`, { waitUntil: "networkidle" });

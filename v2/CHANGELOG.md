@@ -17,6 +17,31 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## Unreleased
+
+Merged the Android TV Desktop Toolkit's feature set in and broadened the app
+from Shield-specific to a general **Android TV Optimizer**.
+
+- **Per-app maintenance**: Clear cache / Clear data (data-wipe gated by the
+  do-not-disable list + confirm) and a device-wide Kill background.
+- **Performance**: the Optimize/Restore pass now also flips the app freezer and
+  touch-response tuning; new Compile speed-profile action.
+- **New System tab**: rotation, screen timeout, GPS, developer options, ambient
+  display, NTP repair, wake/sleep, settings shortcuts, launch-by-package, and a
+  battery/IME/Play-Protect readout — each tunable shows a ★ recommended value.
+- **Recommendations** added across the Tweaks / Display / Audio settings.
+- **ADB Console**: a power-user `adb shell` runner with bookmarks.
+- **Screen recording** (screenrecord → pull) alongside Screenshot.
+- **Quick install**: auto-download the ABI-matched build of popular apps
+  (SmartTube, Aurora, Obtainium, LocalSend, AdGuard) and sideload with Play
+  Protect handled; standalone Play Protect toggle.
+- **Shizuku** one-click setup, **scrcpy mirror** window, and **mDNS** discovery
+  folded into Scan Network.
+- **Display name** is now "Android TV Optimizer". The package identifier, data
+  directory, updater endpoint, and installer UpgradeCode are intentionally
+  unchanged so existing installs upgrade in place; a full product/identifier
+  rename (and Homebrew cask) remains a deliberate future step.
+
 ## v2-2.1.0
 
 Launcher switching is now fast and reliable, with much clearer feedback across

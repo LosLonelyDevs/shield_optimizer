@@ -6,6 +6,7 @@
 pub mod apps;
 pub mod audio;
 pub mod backup;
+pub mod console;
 pub mod devices;
 pub mod display;
 pub mod files;
@@ -16,14 +17,18 @@ pub mod install;
 pub mod launcher;
 pub mod loader;
 pub mod media_apps;
+pub mod mirror;
 pub mod optimize;
+pub mod quick_install;
 pub mod reboot;
+pub mod recording;
 pub mod recovery;
 pub mod scan;
 pub mod screenshot;
 pub mod sideload;
 pub mod snapshot;
 pub mod state;
+pub mod system;
 pub mod tuning;
 pub mod update;
 

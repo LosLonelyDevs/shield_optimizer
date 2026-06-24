@@ -317,6 +317,51 @@ export interface TweaksState {
 
 export type SettingNamespace = "global" | "secure" | "system";
 
+export interface SystemInfo {
+  battery_percent: number | null;
+  input_method: string | null;
+  play_protect_enabled: boolean | null;
+  user_rotation: string | null;
+  screen_off_timeout: string | null;
+  location_mode: string | null;
+  developer_options: string | null;
+  doze_enabled: string | null;
+}
+
+export type SystemScreen =
+  | "notification_shade"
+  | "system_updates"
+  | "wifi_settings"
+  | "bluetooth_settings"
+  | "display_settings"
+  | "app_settings"
+  | "developer_options";
+
+export interface ConsoleResult {
+  ok: boolean;
+  output: string;
+}
+
+export interface RecordResult {
+  ok: boolean;
+  message: string;
+  path: string | null;
+}
+
+export interface QuickApp {
+  name: string;
+  package: string;
+  description: string;
+  source: string;
+  repo: string | null;
+  asset_match: string | null;
+  fallback_url: string | null;
+}
+
+export interface QuickAppRow extends QuickApp {
+  installed: boolean;
+}
+
 export interface WriteResult {
   ok: boolean;
   message: string;

@@ -12,9 +12,9 @@ pub mod engine;
 use std::path::PathBuf;
 
 use commands::{
-    apps, audio, backup, devices, display, files, health, input, install, launcher, loader,
-    media_apps, optimize, reboot, recovery, scan, screenshot, sideload, snapshot, tuning, update,
-    AppState,
+    apps, audio, backup, console, devices, display, files, health, input, install, launcher,
+    loader, media_apps, mirror, optimize, quick_install, reboot, recording, recovery, scan,
+    screenshot, sideload, snapshot, system, tuning, update, AppState,
 };
 
 /// Resolve the OS-appropriate app data root (snapshots live in a `snapshots`
@@ -101,6 +101,9 @@ pub fn run() {
             apps::app_usage_map,
             apps::safety_info,
             apps::trim_caches,
+            apps::clear_app_cache,
+            apps::clear_app_data,
+            apps::kill_all_background,
             apps::app_permission_state,
             apps::set_app_permission,
             apps::set_app_op,
@@ -142,6 +145,20 @@ pub fn run() {
             media_apps::detect_media_apps,
             media_apps::stage_kodi_config,
             media_apps::grant_write_secure_settings,
+            system::system_info,
+            system::open_system_screen,
+            system::power_action,
+            system::launch_app,
+            system::repair_ntp,
+            system::compile_speed_profile,
+            console::run_shell,
+            recording::start_recording,
+            recording::stop_recording,
+            quick_install::list_quick_apps,
+            quick_install::install_quick_app,
+            quick_install::setup_shizuku,
+            system::set_play_protect,
+            mirror::mirror_screen,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

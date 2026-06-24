@@ -9,6 +9,7 @@ import type {
   ApplyResult,
   AudioReport,
   BackupApkResult,
+  ConsoleResult,
   CloneAppResult,
   ConnectResult,
   CurrentDisplayScaling,
@@ -29,6 +30,7 @@ import type {
   HealthReport,
   InstallApkResult,
   InstallResult,
+  QuickAppRow,
   LauncherStatus,
   OptimizeMode,
   OptimizePlan,
@@ -38,6 +40,7 @@ import type {
   PrivateDnsResult,
   PrivateDnsState,
   RebootMode,
+  RecordResult,
   RebootResult,
   RecoveryResult,
   RestartResult,
@@ -49,6 +52,8 @@ import type {
   SettingNamespace,
   SnapshotApplyPlan,
   SnapshotFile,
+  SystemInfo,
+  SystemScreen,
   TweaksState,
   UpdateInfo,
   WriteResult,
@@ -148,6 +153,12 @@ export const api = {
     invoke<Record<string, import("$lib/types").AppUsage>>("app_usage_map", { serial }),
   safetyInfo: (pkg: string) => invoke<Safety>("safety_info", { package: pkg }),
   trimCaches: (serial: string) => invoke<ActionResult>("trim_caches", { serial }),
+  clearAppCache: (serial: string, pkg: string) =>
+    invoke<ActionResult>("clear_app_cache", { serial, package: pkg }),
+  clearAppData: (serial: string, pkg: string) =>
+    invoke<ActionResult>("clear_app_data", { serial, package: pkg }),
+  killAllBackground: (serial: string) =>
+    invoke<ActionResult>("kill_all_background", { serial }),
   sendText: (serial: string, text: string, forceShell = false) =>
     invoke<SendTextResult>("send_text", { serial, text, forceShell }),
   sendKey: (serial: string, key: string, forceShell = false) =>
@@ -229,4 +240,40 @@ export const api = {
     invoke<StageResult>("stage_kodi_config", { serial, profile }),
   grantWriteSecureSettings: (serial: string, pkg: string) =>
     invoke<ActionResult>("grant_write_secure_settings", { serial, package: pkg }),
+
+  // System tab — device-settings shortcuts, quick tools, info readout.
+  systemInfo: (serial: string) => invoke<SystemInfo>("system_info", { serial }),
+  openSystemScreen: (serial: string, screen: SystemScreen) =>
+    invoke<ActionResult>("open_system_screen", { serial, screen }),
+  powerAction: (serial: string, wake: boolean) =>
+    invoke<ActionResult>("power_action", { serial, wake }),
+  launchApp: (serial: string, pkg: string) =>
+    invoke<ActionResult>("launch_app", { serial, package: pkg }),
+  repairNtp: (serial: string) => invoke<ActionResult>("repair_ntp", { serial }),
+  compileSpeedProfile: (serial: string) =>
+    invoke<ActionResult>("compile_speed_profile", { serial }),
+
+  // Raw ADB shell console (power-user escape hatch).
+  runShell: (serial: string, command: string) =>
+    invoke<ConsoleResult>("run_shell", { serial, command }),
+
+  // Screen recording (screenrecord → pull → save).
+  startRecording: (serial: string) =>
+    invoke<ActionResult>("start_recording", { serial }),
+  stopRecording: (serial: string) =>
+    invoke<RecordResult>("stop_recording", { serial }),
+
+  // Quick-install (arch-aware auto-download) + Play Protect toggle.
+  listQuickApps: (serial: string) =>
+    invoke<QuickAppRow[]>("list_quick_apps", { serial }),
+  installQuickApp: (serial: string, pkg: string) =>
+    invoke<InstallApkResult>("install_quick_app", { serial, package: pkg }),
+  setPlayProtect: (serial: string, enabled: boolean) =>
+    invoke<ActionResult>("set_play_protect", { serial, enabled }),
+  setupShizuku: (serial: string) =>
+    invoke<ActionResult>("setup_shizuku", { serial }),
+
+  // scrcpy mirror window (launched from PATH).
+  mirrorScreen: (serial: string) =>
+    invoke<ActionResult>("mirror_screen", { serial }),
 };

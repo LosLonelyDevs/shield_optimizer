@@ -32,6 +32,10 @@ pub struct AppState {
     /// Live scrcpy control sessions, keyed by device serial. Lazily started on
     /// the first remote key and held open for the Remote tab's lifetime.
     pub remote_sessions: Mutex<HashMap<String, RemoteInputSession>>,
+    /// In-flight `screenrecord` children, keyed by device serial. The spawned
+    /// `adb shell screenrecord` runs until SIGINT'd on stop; `kill_on_drop` is a
+    /// backstop if the app exits mid-recording.
+    pub recordings: Mutex<HashMap<String, tokio::process::Child>>,
 }
 
 impl AppState {
@@ -43,7 +47,26 @@ impl AppState {
             data_dir,
             known_names: HashMap::new(),
             remote_sessions: Mutex::new(HashMap::new()),
+            recordings: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Is a screen recording in progress for `serial`?
+    pub async fn is_recording(&self, serial: &str) -> bool {
+        self.recordings.lock().await.contains_key(serial)
+    }
+
+    /// Register a started recording child for `serial`.
+    pub async fn insert_recording(&self, serial: &str, child: tokio::process::Child) {
+        self.recordings
+            .lock()
+            .await
+            .insert(serial.to_string(), child);
+    }
+
+    /// Remove and return the recording child for `serial`, if any.
+    pub async fn take_recording(&self, serial: &str) -> Option<tokio::process::Child> {
+        self.recordings.lock().await.remove(serial)
     }
 
     /// Attach the curated package→name map. Builder-style so the existing

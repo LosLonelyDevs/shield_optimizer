@@ -11,6 +11,7 @@ pub mod detection;
 pub mod kodi;
 pub mod launcher;
 pub mod optimize;
+pub mod release_assets;
 pub mod safety;
 pub mod snapshot;
 pub mod types;
@@ -27,6 +28,7 @@ pub use launcher::{
     stock_launcher_catalog, LauncherEntry, LauncherStatus,
 };
 pub use optimize::{compute_plan, OptimizeInputs, OptimizePlan};
+pub use release_assets::{select_asset, ReleaseAsset};
 pub use safety::{classify as classify_safety, is_never_disable, Safety};
 pub use snapshot::{Snapshot, SnapshotApplyPlan, SnapshotError, SCHEMA_VERSION};
 pub use types::{

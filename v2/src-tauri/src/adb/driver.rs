@@ -85,6 +85,15 @@ pub trait AdbDriver: Send + Sync {
     /// Run `adb -s <serial> shell <command>`.
     async fn shell(&self, serial: &str, command: &str) -> AdbResult<AdbOutput>;
 
+    /// Like `shell`, but with a transfer-sized timeout for on-device commands
+    /// that legitimately run for minutes — e.g. `cmd package compile`, which
+    /// recompiles every app and can take several minutes. The standard 30s
+    /// timeout would kill it mid-run. Default delegates to `shell` so mocks need
+    /// no extra wiring.
+    async fn shell_long(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
+        self.shell(serial, command).await
+    }
+
     /// Run `adb <args...>` and return raw stdout bytes — for binary output
     /// like `exec-out screencap -p`, where UTF-8 conversion would corrupt the
     /// data. Default reports unsupported so mocks without binary needs don't
@@ -217,6 +226,11 @@ impl AdbDriver for SubprocessAdb {
 
     async fn shell(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
         self.run(&["-s", serial, "shell", command]).await
+    }
+
+    async fn shell_long(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
+        self.run_with_timeout(&["-s", serial, "shell", command], TRANSFER_TIMEOUT)
+            .await
     }
 
     async fn raw_bytes(&self, args: &[&str]) -> AdbResult<Vec<u8>> {

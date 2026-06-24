@@ -11,6 +11,11 @@
   let busy = $state<string | null>(null);
   let message = $state("");
 
+  // Formats the receiver actually reports it can decode. The labels match each
+  // codec toggle's `f.label`, so this drives the ★ recommendation below. Empty
+  // on devices (e.g. Shield over a TV/eARC path) that don't expose sink caps.
+  const recommendedFormats = $derived(new Set(report?.supported_encodings ?? []));
+
   let media = $state<MediaApps | null>(null);
   let kodiBusy = $state(false);
   let kodiMessage = $state("");
@@ -136,6 +141,7 @@
     {/if}
 
     <h3>Surround Output Mode</h3>
+    <p class="rec">★ Recommended: <strong>Auto</strong> — sends exactly the formats your TV/receiver reports it can decode, so surround works without risking silence. Use <em>Manual</em> only if a codec is missing from the report but your gear truly supports it; <em>Never</em> forces safe stereo.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{modeLabel(report.mode)}</strong></div>
@@ -149,6 +155,7 @@
           <button
             class="small-action"
             class:active={report.mode === opt.v}
+            class:recommended={opt.v === "auto"}
             disabled={busy === "mode"}
             onclick={() => setMode(opt.v as SurroundMode)}
           >{opt.label}</button>
@@ -162,15 +169,29 @@
     </p>
 
     <h3>Codecs {#if report.mode !== "manual"}<span class="muted small">(apply in Manual mode)</span>{/if}</h3>
+    {#if recommendedFormats.size > 0}
+      <p class="rec">★ Your receiver reports the ★-marked formats below — switch Surround mode to <strong>Manual</strong> and enable those.</p>
+    {:else}
+      <p class="rec">
+        No formats detected from your receiver, so there's nothing to recommend from. On a
+        <strong>Shield → TV → eARC → AVR</strong> path the Shield reads the <em>TV's</em> audio
+        capabilities, not the AVR's. To fix: set the TV's digital audio output to
+        <strong>Bitstream/Passthrough</strong> and enable <strong>eARC</strong>, then reboot the
+        Shield — or plug the Shield <strong>directly into the AVR</strong>. On eARC you can safely
+        set Surround mode to <strong>Manual</strong> and enable all six below; eARC carries them.
+      </p>
+    {/if}
     <div class="format-grid">
       {#each report.formats as f (f.id)}
+        {@const rec = recommendedFormats.has(f.label)}
         <button
           class="small-action fmt"
           class:active={f.enabled}
+          class:is-rec={rec}
           disabled={busy === `fmt:${f.id}`}
           onclick={() => toggleFormat(f.id)}
         >
-          <span>{f.label}</span>
+          <span>{f.label}{rec ? " ★" : ""}</span>
           <span class="muted small">{f.enabled ? "on" : "off"}</span>
         </button>
       {/each}
@@ -180,7 +201,11 @@
     {#if report.supported_encodings.length}
       <div class="muted small">{report.supported_encodings.join(" · ")}</div>
     {:else}
-      <div class="muted small">Nothing reported in <code>dumpsys audio</code> (varies by firmware).</div>
+      <div class="muted small">
+        Nothing reported — the Shield isn't receiving your receiver's audio capabilities
+        (see the note above). This is common on Shield over a TV/eARC path and isn't a
+        per-app limitation; Manual mode works regardless.
+      </div>
     {/if}
 
     {#if media?.kodi}
@@ -298,6 +323,27 @@
     color: #fff;
     border-color: var(--accent);
   }
+  .small-action.recommended {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .small-action.recommended::before {
+    content: "★ ";
+    color: var(--accent);
+  }
+  .small-action.recommended.active::before {
+    color: #fff;
+  }
+  .rec {
+    font-size: 0.82rem;
+    color: var(--accent);
+    margin: 0.15rem 0 0.45rem;
+    line-height: 1.45;
+  }
+  .rec strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
   .current {
     font-size: 0.85rem;
     color: var(--fg-secondary);
@@ -341,6 +387,12 @@
     align-items: center;
     gap: 0.5rem;
     text-align: left;
+  }
+  /* Receiver reports it can decode this codec — recommended to enable. Distinct
+     from .active (currently on): a recommended codec may still be off. */
+  .fmt.is-rec {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .kodi-form {
     display: flex;

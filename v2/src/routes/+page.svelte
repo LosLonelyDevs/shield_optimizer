@@ -298,7 +298,7 @@
   <div class="install-pane">
     <h2>ADB not found on this system</h2>
     <p>
-      Shield Optimizer needs Android's <code>adb</code> binary to talk to your TV.
+      Android TV Optimizer needs Android's <code>adb</code> binary to talk to your TV.
       We can download Google's official platform-tools and install them locally —
       no system-wide changes, just a self-contained copy under your app-data folder.
     </p>

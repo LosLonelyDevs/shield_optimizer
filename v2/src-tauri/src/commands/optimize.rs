@@ -92,8 +92,17 @@ pub struct PerformanceResult {
     pub message: String,
 }
 
-/// `apply_performance_settings` — the post-wizard step that writes the
-/// animation triple all at once. Optimize → 0.5, Restore → 1.0.
+/// `apply_performance_settings` — the post-wizard step that applies the
+/// device-wide performance triple in one shell call:
+///   - animation scales: Optimize → 0.5×, Restore → 1.0×;
+///   - app freezer (`cached_apps_freezer`): Optimize → `enabled`, Restore →
+///     `device_default`;
+///   - touch-response thresholds (`tap_duration_threshold`,
+///     `touch_blocking_period`): Optimize → `0.0` (most responsive), Restore →
+///     deleted so the platform default returns.
+///
+/// All are momentary system settings (not snapshot-tracked) and fully reversible
+/// via the `Default` profile, so no safety gate applies.
 #[tauri::command]
 pub async fn apply_performance_settings(
     state: State<'_, AppState>,
@@ -104,19 +113,36 @@ pub async fn apply_performance_settings(
         PerformanceProfile::Optimized => "0.5",
         PerformanceProfile::Default => "1",
     };
+    // Freezer + touch tuning, reversed on Restore.
+    let extra = match profile {
+        PerformanceProfile::Optimized => {
+            "; settings put global cached_apps_freezer enabled\
+             ; settings put secure tap_duration_threshold 0.0\
+             ; settings put secure touch_blocking_period 0.0"
+        }
+        PerformanceProfile::Default => {
+            "; settings put global cached_apps_freezer device_default\
+             ; settings delete secure tap_duration_threshold\
+             ; settings delete secure touch_blocking_period"
+        }
+    };
     let cmd = format!(
         "settings put global window_animation_scale {value}; \
          settings put global transition_animation_scale {value}; \
-         settings put global animator_duration_scale {value}"
+         settings put global animator_duration_scale {value}{extra}"
     );
     let adb = state.adb_snapshot().await;
     let out = adb
         .shell(&serial, &cmd)
         .await
         .map_err(|e| format!("settings put: {e}"))?;
+    let label = match profile {
+        PerformanceProfile::Optimized => "Performance settings applied",
+        PerformanceProfile::Default => "Performance settings restored to defaults",
+    };
     let message = if out.stdout.is_empty() {
         if out.stderr.is_empty() {
-            format!("Animations → {value}×")
+            label.to_string()
         } else {
             out.stderr
         }

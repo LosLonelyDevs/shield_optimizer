@@ -1,0 +1,47 @@
+[
+  {
+    "name": "SmartTube",
+    "package": "com.teamsmart.videomanager.tv",
+    "description": "Ad-free YouTube for Android TV — SponsorBlock, no ads, 4K/60.",
+    "source": "github",
+    "repo": "yuliskov/SmartTube",
+    "asset_match": "smarttube_stable",
+    "fallback_url": null
+  },
+  {
+    "name": "Aurora Store",
+    "package": "com.aurora.store",
+    "description": "Open-source Play Store client — install/update apps without a Google account.",
+    "source": "gitlab",
+    "repo": "AuroraOSS/AuroraStore",
+    "asset_match": null,
+    "fallback_url": null
+  },
+  {
+    "name": "Obtainium",
+    "package": "dev.imranr.obtainium",
+    "description": "Install and auto-update apps straight from their GitHub/GitLab releases.",
+    "source": "github",
+    "repo": "ImranR98/Obtainium",
+    "asset_match": null,
+    "fallback_url": null
+  },
+  {
+    "name": "LocalSend",
+    "package": "org.localsend.localsend_app",
+    "description": "AirDrop-style local file sharing between your PC, phone, and TV.",
+    "source": "github",
+    "repo": "localsend/localsend",
+    "asset_match": null,
+    "fallback_url": null
+  },
+  {
+    "name": "AdGuard for Android TV",
+    "package": "com.adguard.android.tv",
+    "description": "System-wide ad and tracker blocking via a local VPN.",
+    "source": "url",
+    "repo": null,
+    "asset_match": null,
+    "fallback_url": "https://agrd.io/tvapk"
+  }
+]

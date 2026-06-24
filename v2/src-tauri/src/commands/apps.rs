@@ -299,6 +299,74 @@ pub async fn force_stop(
     run(&state, &serial, &format!("am force-stop {package}")).await
 }
 
+/// `clear_app_cache` — `pm clear-cache <pkg>`. Drops the app's cached files
+/// without touching its data, accounts, or settings; the cache rebuilds on next
+/// launch, so (like `trim_caches`) nothing persists and no safety gate beyond
+/// name validation is needed.
+#[tauri::command]
+pub async fn clear_app_cache(
+    state: State<'_, AppState>,
+    serial: String,
+    package: String,
+) -> Result<ActionResult, String> {
+    clear_app_cache_impl(state.inner(), &serial, &package).await
+}
+
+pub async fn clear_app_cache_impl(
+    state: &AppState,
+    serial: &str,
+    package: &str,
+) -> Result<ActionResult, String> {
+    if let Some(rejection) = reject_invalid_package(package) {
+        return Ok(rejection);
+    }
+    run(state, serial, &format!("pm clear-cache {package}")).await
+}
+
+/// `clear_app_data` — `pm clear <pkg>`. Wipes the app's data, cache, accounts,
+/// and settings — it resets the app to a fresh-install state. Destructive and
+/// not reversible, so the UI gates it behind a loud confirm; here we apply the
+/// same NEVER_DISABLE refusal as `disable_package`, since clearing a
+/// framework/provider's data can brick the device or sign the user out
+/// everywhere.
+#[tauri::command]
+pub async fn clear_app_data(
+    state: State<'_, AppState>,
+    serial: String,
+    package: String,
+) -> Result<ActionResult, String> {
+    clear_app_data_impl(state.inner(), &serial, &package).await
+}
+
+pub async fn clear_app_data_impl(
+    state: &AppState,
+    serial: &str,
+    package: &str,
+) -> Result<ActionResult, String> {
+    if let Some(rejection) = reject_invalid_package(package) {
+        return Ok(rejection);
+    }
+    if let Safety::NeverDisable { reason } = classify_safety(package) {
+        return Ok(ActionResult {
+            ok: false,
+            message: format!("Refusing to clear data for {package}: {reason}"),
+        });
+    }
+    run(state, serial, &format!("pm clear {package}")).await
+}
+
+/// `kill_all_background` — `am kill-all`. Asks the activity manager to kill
+/// every background process it's willing to (foreground apps survive); they
+/// restart on next use, so nothing persists and no safety gate is needed. The
+/// device-wide companion to per-app `force_stop`.
+#[tauri::command]
+pub async fn kill_all_background(
+    state: State<'_, AppState>,
+    serial: String,
+) -> Result<ActionResult, String> {
+    run(&state, &serial, "am kill-all").await
+}
+
 /// Permission names share the package-name character set; reuse the setting-key
 /// allowlist so neither value can carry shell metacharacters into the command.
 fn is_valid_permission(permission: &str) -> bool {
@@ -756,6 +824,50 @@ mod tests {
             r.ok,
             "silent pm revoke should read as success: {}",
             r.message
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_app_data_refuses_never_disable() {
+        use crate::commands::test_support::{state_with, MockAdb};
+
+        // Capture the shell log so we can prove no `pm clear` ever reached the
+        // device for a bricking-tier package.
+        let mock = MockAdb::default();
+        let log = mock.shell_log();
+        let state = state_with(mock);
+
+        let r = clear_app_data_impl(&state, "serial", "com.android.systemui")
+            .await
+            .unwrap();
+        assert!(
+            !r.ok,
+            "clearing data for a NEVER_DISABLE package must be refused"
+        );
+        assert!(
+            log.lock().unwrap().is_empty(),
+            "no shell command should be sent for a refused clear-data"
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_app_cache_runs_for_normal_package() {
+        use crate::commands::test_support::{state_with, MockAdb};
+
+        let mock = MockAdb::default();
+        let log = mock.shell_log();
+        let state = state_with(mock);
+
+        let r = clear_app_cache_impl(&state, "serial", "com.netflix.ninja")
+            .await
+            .unwrap();
+        assert!(r.ok, "clear-cache on a safe package should succeed");
+        assert!(
+            log.lock()
+                .unwrap()
+                .iter()
+                .any(|c| c == "pm clear-cache com.netflix.ninja"),
+            "the clear-cache command should reach the device"
         );
     }
 

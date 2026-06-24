@@ -83,7 +83,7 @@
   <header>
     <div class="brand">
       <span class="logo-dot"></span>
-      <span class="title">Shield Optimizer</span>
+      <span class="title">Android TV Optimizer</span>
       {#if update}
         <span class="version" title="Installed version">v{update.current}</span>
         {#if pendingUpdate}
@@ -133,7 +133,7 @@
   </main>
   <footer>
     <button class="kofi" onclick={() => openUrl("https://ko-fi.com/bryanroscoe")}>
-      ☕ Enjoying Shield Optimizer? Support it on Ko-fi
+      ☕ Enjoying Android TV Optimizer? Support it on Ko-fi
     </button>
   </footer>
 </div>

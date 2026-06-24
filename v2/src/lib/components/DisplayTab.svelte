@@ -120,6 +120,7 @@
       Lets apps switch the panel to match video fps (24/25/30/50/60). Seamless avoids
       a black flash on the switch. Captured in snapshots, so it's reversible.
     </p>
+    <p class="rec">★ Recommended: <strong>Seamless only</strong> — matches fps without the black-screen flash <em>Always</em> causes on each switch. For real judder-free 24p, set the per-app profiles below rather than relying on this toggle.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{matchContentLabel(report.match_content_frame_rate)}</strong></div>
@@ -130,6 +131,7 @@
           <button
             class="small-action"
             class:active={report.match_content_frame_rate === opt.v}
+            class:recommended={opt.v === "1"}
             disabled={actionBusy === "mcfr"}
             onclick={() => setMatchContent(opt.v)}
           >{opt.label}</button>
@@ -236,6 +238,27 @@
     background: var(--accent-strong);
     color: #fff;
     border-color: var(--accent);
+  }
+  .small-action.recommended {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .small-action.recommended::before {
+    content: "★ ";
+    color: var(--accent);
+  }
+  .small-action.recommended.active::before {
+    color: #fff;
+  }
+  .rec {
+    font-size: 0.82rem;
+    color: var(--accent);
+    margin: 0.15rem 0 0.45rem;
+    line-height: 1.45;
+  }
+  .rec strong {
+    color: var(--accent);
+    font-weight: 600;
   }
   .current {
     font-size: 0.85rem;

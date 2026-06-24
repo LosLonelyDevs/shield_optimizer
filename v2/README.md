@@ -1,6 +1,6 @@
-# Shield Optimizer v2
+# Android TV Optimizer (v2)
 
-A ground-up rewrite of Shield Optimizer as a **native installable desktop app** with **built-in auto-update** and an eventual **mobile companion** — replacing the v1 PowerShell script while preserving every behavior catalogued in [`docs/FEATURES.md`](../docs/FEATURES.md).
+A **native installable desktop app** for debloating, tuning, and managing **any Android TV / Google TV device** — Nvidia Shield, Onn 4K, Chromecast with Google TV, and more — over ADB, with **built-in auto-update** and an eventual **mobile companion**. Started life as the Shield-specific "Shield Optimizer" PowerShell script (v1) and grew into a general Android TV toolkit; it preserves every behavior catalogued in [`docs/FEATURES.md`](../docs/FEATURES.md).
 
 <img alt="Shield Optimizer v2 walkthrough (dark)" src="screenshots/gallery.gif" />
 
