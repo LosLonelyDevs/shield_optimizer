@@ -7,6 +7,7 @@ import type {
   AdbStatus,
   AppEntry,
   ApplyResult,
+  AudioReport,
   BackupApkResult,
   CloneAppResult,
   ConnectResult,
@@ -16,9 +17,14 @@ import type {
   DeviceReport,
   DeviceType,
   DiscoveredApk,
+  DisplayReport,
   DisplayScalePreset,
   DisplayScaleResult,
   FileEntry,
+  KodiProfile,
+  MediaApps,
+  StageResult,
+  SurroundMode,
   FileTransferResult,
   HealthReport,
   InstallApkResult,
@@ -207,4 +213,20 @@ export const api = {
     invoke<OptimizePlan>("prepare_optimize", { serial, deviceType, mode }),
   applyPerformanceSettings: (serial: string, profile: PerformanceProfile) =>
     invoke<PerformanceResult>("apply_performance_settings", { serial, profile }),
+
+  // Display / Audio wizards + media-app integration (Best Practices 2026).
+  displayReport: (serial: string) =>
+    invoke<DisplayReport>("display_report", { serial }),
+  audioReport: (serial: string) =>
+    invoke<AudioReport>("audio_report", { serial }),
+  setSurroundOutput: (serial: string, mode: SurroundMode) =>
+    invoke<WriteResult>("set_surround_output", { serial, mode }),
+  setSurroundFormats: (serial: string, formatIds: number[]) =>
+    invoke<WriteResult>("set_surround_formats", { serial, formatIds }),
+  detectMediaApps: (serial: string) =>
+    invoke<MediaApps>("detect_media_apps", { serial }),
+  stageKodiConfig: (serial: string, profile: KodiProfile) =>
+    invoke<StageResult>("stage_kodi_config", { serial, profile }),
+  grantWriteSecureSettings: (serial: string, pkg: string) =>
+    invoke<ActionResult>("grant_write_secure_settings", { serial, package: pkg }),
 };

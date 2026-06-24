@@ -27,6 +27,8 @@ pub fn tracked_setting_keys() -> &'static [(&'static str, &'static str)] {
         ("global", "hdmi_control_auto_wakeup_enabled"),
         ("global", "hdmi_control_auto_device_off_enabled"),
         ("global", "hdmi_system_audio_control_enabled"),
+        ("global", "encoded_surround_output"),
+        ("global", "encoded_surround_output_enabled_formats"),
         ("secure", "match_content_frame_rate"),
         ("secure", "long_press_timeout"),
     ]

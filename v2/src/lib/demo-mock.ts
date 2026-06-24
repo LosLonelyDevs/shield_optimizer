@@ -15,9 +15,12 @@ import demoApps from "./demo-apps.json";
 import pkg from "../../package.json";
 import type {
   AppEntry,
+  AudioReport,
   Device,
+  DisplayReport,
   HealthReport,
   LauncherStatus,
+  MediaApps,
   OptimizePlan,
   OptimizePlanItem,
   SnapshotFile,
@@ -101,6 +104,36 @@ const tweaks: TweaksState = {
   animator_duration_scale: "0.5",
   background_process_limit: "2",
 };
+
+const displayReport: DisplayReport = {
+  current: { resolution: "3840x2160", refresh_hz: 59.94, hdr_types: ["Dolby Vision", "HDR10", "HLG"] },
+  supported_modes: [
+    { resolution: "3840x2160", refresh_hz: 60, active: false },
+    { resolution: "3840x2160", refresh_hz: 59.94, active: true },
+    { resolution: "3840x2160", refresh_hz: 50, active: false },
+    { resolution: "3840x2160", refresh_hz: 30, active: false },
+    { resolution: "3840x2160", refresh_hz: 24, active: false },
+    { resolution: "1920x1080", refresh_hz: 60, active: false },
+  ],
+  match_content_frame_rate: "2",
+};
+
+const audioReport: AudioReport = {
+  mode: "manual",
+  mode_raw: "3",
+  formats: [
+    { id: 5, key: "ac3", label: "Dolby Digital (AC-3)", enabled: true },
+    { id: 6, key: "eac3", label: "Dolby Digital Plus (E-AC-3)", enabled: true },
+    { id: 18, key: "eac3_joc", label: "Dolby Atmos (E-AC-3 JOC)", enabled: true },
+    { id: 7, key: "dts", label: "DTS", enabled: true },
+    { id: 8, key: "dts_hd", label: "DTS-HD", enabled: false },
+    { id: 14, key: "truehd", label: "Dolby TrueHD", enabled: false },
+  ],
+  supported_encodings: ["Dolby Digital (AC-3)", "Dolby Digital Plus (E-AC-3)", "Dolby Atmos (E-AC-3 JOC)", "DTS"],
+  active_device: "HDMI",
+};
+
+const mediaApps: MediaApps = { kodi: true, plex: true, refresh_rate_app: "com.example.refreshrate" };
 
 const snapshots: SnapshotFile[] = [
   {
@@ -307,6 +340,20 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return optimizePlan((args.mode as "optimize" | "restore") ?? "optimize");
     case "report_all":
       return [{ serial: SERIAL, name: device.name, report: health, error: null }];
+    case "display_report":
+      return displayReport;
+    case "audio_report":
+      return audioReport;
+    case "detect_media_apps":
+      return mediaApps;
+    case "set_surround_output":
+      return { ok: true, message: "Surround output mode set (demo)." };
+    case "set_surround_formats":
+      return { ok: true, message: "Enabled formats updated (demo)." };
+    case "stage_kodi_config":
+      return { ok: true, message: "Wrote advancedsettings.xml.", device_path: "/sdcard/advancedsettings.xml" };
+    case "grant_write_secure_settings":
+      return { ok: true, message: "Granted WRITE_SECURE_SETTINGS (demo)." };
     default:
       // Mutating commands (disable_package, set_default_launcher, …) aren't
       // exercised during capture; answer benignly just in case.

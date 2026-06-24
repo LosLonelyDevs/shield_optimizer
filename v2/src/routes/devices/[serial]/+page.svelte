@@ -31,10 +31,12 @@
   import SideloadTab from "$lib/components/SideloadTab.svelte";
   import RemoteTab from "$lib/components/RemoteTab.svelte";
   import OptimizeTab from "$lib/components/OptimizeTab.svelte";
+  import DisplayTab from "$lib/components/DisplayTab.svelte";
+  import AudioTab from "$lib/components/AudioTab.svelte";
 
   let serial = $derived(decodeURIComponent($page.params.serial ?? ""));
 
-  type Tab = "overview" | "health" | "launcher" | "apps" | "optimize" | "tweaks" | "remote" | "files" | "snapshot" | "sideload";
+  type Tab = "overview" | "health" | "launcher" | "apps" | "optimize" | "tweaks" | "display" | "audio" | "remote" | "files" | "snapshot" | "sideload";
   let activeTab = $state<Tab>("overview");
 
   let device = $state<Device | null>(null);
@@ -1175,6 +1177,8 @@
       { id: "apps", label: "App List" },
       { id: "optimize", label: "Optimize" },
       { id: "tweaks", label: "Tweaks" },
+      { id: "display", label: "Display" },
+      { id: "audio", label: "Audio" },
       { id: "remote", label: "Remote" },
       { id: "files", label: "Files" },
       { id: "sideload", label: "Install APK" },
@@ -1843,6 +1847,16 @@
   {#if visited.tweaks}
     <div hidden={activeTab !== "tweaks"}>
       <TweaksTab {serial} />
+    </div>
+  {/if}
+  {#if visited.display}
+    <div hidden={activeTab !== "display"}>
+      <DisplayTab {serial} />
+    </div>
+  {/if}
+  {#if visited.audio}
+    <div hidden={activeTab !== "audio"}>
+      <AudioTab {serial} />
     </div>
   {/if}
   {#if visited.files}

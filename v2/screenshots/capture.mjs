@@ -86,6 +86,18 @@ async function captureScreens(page, shot) {
     await page.getByText("HDMI", { exact: false }).first().waitFor();
     await shot("tweaks");
 
+    // 7b. Display wizard.
+    await page.locator("#tab-display").click();
+    await page.getByText("Supported Modes", { exact: false }).first().waitFor();
+    await page.waitForTimeout(300);
+    await shot("display");
+
+    // 7c. Audio wizard.
+    await page.locator("#tab-audio").click();
+    await page.getByText("Surround Output Mode", { exact: false }).first().waitFor();
+    await page.waitForTimeout(300);
+    await shot("audio");
+
     // 8. Remote.
     await page.locator("#tab-remote").click();
     await page.getByText("Live typing", { exact: false }).first().waitFor();
@@ -118,6 +130,8 @@ async function main() {
     cwd: V2,
     env: { ...process.env, VITE_DEMO: "1" },
     stdio: ["ignore", "pipe", "pipe"],
+    // Resolve `npm` → `npm.cmd` on Windows; harmless on POSIX.
+    shell: true,
   });
   server.stdout.on("data", () => {});
   server.stderr.on("data", (d) => process.stderr.write(`[vite] ${d}`));

@@ -418,6 +418,70 @@ pub fn parse_display_mode(dumpsys_display: &str) -> DisplayMode {
     }
 }
 
+/// One selectable display mode from `dumpsys display` supportedModes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayModeOption {
+    /// e.g. "3840x2160".
+    pub resolution: String,
+    /// e.g. 59.94.
+    pub refresh_hz: f64,
+    /// True for the mode currently driving the panel.
+    pub active: bool,
+}
+
+/// Enumerate the distinct display modes the panel advertises in
+/// `dumpsys display` (`supportedModes [{id=…,width=…,height=…,fps=…}, …]`),
+/// flagging the active one. Read-only: Android TV exposes no ADB way to *set*
+/// the HDMI output mode, but listing them lets the UI show e.g. that 4K60 and
+/// 4K59.94 both exist. Deduped by resolution+refresh; largest then fastest first.
+pub fn parse_supported_display_modes(dumpsys_display: &str) -> Vec<DisplayModeOption> {
+    static MODE_ENTRY: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"id=(\d+),\s*width=(\d+),\s*height=(\d+),\s*fps=([\d.]+)").unwrap()
+    });
+
+    let active = parse_display_mode(dumpsys_display);
+    let mut out: Vec<DisplayModeOption> = Vec::new();
+    for caps in MODE_ENTRY.captures_iter(dumpsys_display) {
+        let w: u32 = caps[2].parse().unwrap_or(0);
+        let h: u32 = caps[3].parse().unwrap_or(0);
+        let fps: f64 = caps[4].parse().unwrap_or(0.0);
+        if w == 0 || h == 0 {
+            continue;
+        }
+        let resolution = format!("{w}x{h}");
+        let refresh_hz = (fps * 100.0).round() / 100.0;
+        if out
+            .iter()
+            .any(|o| o.resolution == resolution && (o.refresh_hz - refresh_hz).abs() < 0.01)
+        {
+            continue;
+        }
+        let is_active = active.resolution.as_deref() == Some(resolution.as_str())
+            && active
+                .refresh_hz
+                .is_some_and(|r| (r - refresh_hz).abs() < 0.01);
+        out.push(DisplayModeOption {
+            resolution,
+            refresh_hz,
+            active: is_active,
+        });
+    }
+    out.sort_by(|a, b| {
+        let area = |o: &DisplayModeOption| -> u64 {
+            let mut it = o.resolution.split('x');
+            let w: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let h: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            w * h
+        };
+        area(b).cmp(&area(a)).then(
+            b.refresh_hz
+                .partial_cmp(&a.refresh_hz)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
+    });
+    out
+}
+
 /// Parse `dumpsys audio` for the first `Devices: <name>` row — the current
 /// active output device. Returns the uppercased label (HDMI / BUILTIN_SPEAKER
 /// / etc.) or `None` if the section isn't present.
@@ -428,6 +492,34 @@ pub fn parse_active_audio_device(dumpsys_audio: &str) -> Option<String> {
         .captures(dumpsys_audio)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_ascii_uppercase())
+}
+
+/// Best-effort list of surround encodings the connected HDMI sink reports in
+/// `dumpsys audio`. Android exposes these as `AUDIO_FORMAT_<NAME>` tokens in the
+/// device-capability section; the exact layout varies by firmware, so this
+/// scans for known tokens and returns friendly labels (empty if none found).
+/// Read-only — the sink's claimed capabilities, shown next to the surround
+/// toggles.
+pub fn parse_audio_supported_encodings(dumpsys_audio: &str) -> Vec<String> {
+    static TOK: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"AUDIO_FORMAT_([A-Z0-9_]+)").unwrap());
+    let mut out: Vec<String> = Vec::new();
+    for caps in TOK.captures_iter(dumpsys_audio) {
+        let label = match &caps[1] {
+            "AC3" => "Dolby Digital (AC-3)",
+            "E_AC3" => "Dolby Digital Plus (E-AC-3)",
+            "E_AC3_JOC" => "Dolby Atmos (E-AC-3 JOC)",
+            "DTS" => "DTS",
+            "DTS_HD" => "DTS-HD",
+            "DOLBY_TRUEHD" => "Dolby TrueHD",
+            _ => continue,
+        };
+        let s = label.to_string();
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    }
+    out
 }
 
 /// Whether `permission` is currently granted to a package, read from
@@ -692,5 +784,35 @@ DisplayDeviceInfo{"Built-in Screen": uniqueId="local:0", 3840 x 2160, modeId 20,
     fn audio_device_missing_returns_none() {
         let input = "something completely unrelated";
         assert_eq!(parse_active_audio_device(input), None);
+    }
+
+    #[test]
+    fn parses_supported_modes_and_flags_active() {
+        let input = "modeId 20, supportedModes [{id=1, width=3840, height=2160, fps=29.97003}, {id=20, width=3840, height=2160, fps=59.94006}, {id=30, width=1920, height=1080, fps=60.0}]";
+        let modes = parse_supported_display_modes(input);
+        assert_eq!(modes.len(), 3, "deduped, one per resolution+refresh");
+        // 4K sorts ahead of 1080p; within 4K, 59.94 ahead of 29.97.
+        assert_eq!(modes[0].resolution, "3840x2160");
+        assert_eq!(modes[0].refresh_hz, 59.94);
+        assert!(modes[0].active, "active mode id 20 is the 4K59.94 entry");
+        assert!(modes
+            .iter()
+            .any(|m| m.resolution == "1920x1080" && !m.active));
+    }
+
+    #[test]
+    fn supported_encodings_from_dumpsys_audio_tokens() {
+        let input =
+            "Sink formats: AUDIO_FORMAT_AC3, AUDIO_FORMAT_E_AC3, AUDIO_FORMAT_AC3, AUDIO_FORMAT_PCM_16_BIT";
+        let enc = parse_audio_supported_encodings(input);
+        assert_eq!(
+            enc,
+            vec!["Dolby Digital (AC-3)", "Dolby Digital Plus (E-AC-3)"]
+        );
+    }
+
+    #[test]
+    fn supported_encodings_empty_when_absent() {
+        assert!(parse_audio_supported_encodings("no formats here").is_empty());
     }
 }

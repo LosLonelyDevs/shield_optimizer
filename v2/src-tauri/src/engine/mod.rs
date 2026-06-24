@@ -6,7 +6,9 @@
 //! through the ADB driver.
 
 pub mod app_lists;
+pub mod audio;
 pub mod detection;
+pub mod kodi;
 pub mod launcher;
 pub mod optimize;
 pub mod safety;
@@ -14,7 +16,12 @@ pub mod snapshot;
 pub mod types;
 
 pub use app_lists::{AppList, AppListBundle};
+pub use audio::{
+    build_enabled_formats_csv, parse_enabled_formats_csv, SurroundFormat, SurroundMode,
+    SURROUND_FORMATS,
+};
 pub use detection::{detect_device_type, DeviceType};
+pub use kodi::{render_advancedsettings, AdjustRefreshRate, KodiProfile};
 pub use launcher::{
     is_last_enabled_home_handler, is_valid_package_name, launcher_catalog, launcher_rows,
     stock_launcher_catalog, LauncherEntry, LauncherStatus,

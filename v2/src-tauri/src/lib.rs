@@ -12,8 +12,9 @@ pub mod engine;
 use std::path::PathBuf;
 
 use commands::{
-    apps, backup, devices, files, health, input, install, launcher, loader, optimize, reboot,
-    recovery, scan, screenshot, sideload, snapshot, tuning, update, AppState,
+    apps, audio, backup, devices, display, files, health, input, install, launcher, loader,
+    media_apps, optimize, reboot, recovery, scan, screenshot, sideload, snapshot, tuning, update,
+    AppState,
 };
 
 /// Resolve the OS-appropriate app data root (snapshots live in a `snapshots`
@@ -134,6 +135,13 @@ pub fn run() {
             optimize::prepare_optimize,
             optimize::apply_performance_settings,
             update::check_for_update,
+            display::display_report,
+            audio::audio_report,
+            audio::set_surround_output,
+            audio::set_surround_formats,
+            media_apps::detect_media_apps,
+            media_apps::stage_kodi_config,
+            media_apps::grant_write_secure_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -362,6 +362,68 @@ export interface PerformanceResult {
   message: string;
 }
 
+// --- Display / Audio wizards + media-app integration (Best Practices 2026) ---
+
+export interface DisplayModeOption {
+  resolution: string;
+  refresh_hz: number;
+  active: boolean;
+}
+
+export interface DisplayReport {
+  current: DisplayMode;
+  supported_modes: DisplayModeOption[];
+  match_content_frame_rate: string | null;
+}
+
+export type SurroundMode = "auto" | "never" | "always" | "manual";
+
+export interface AudioFormatRow {
+  id: number;
+  key: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface AudioReport {
+  mode: SurroundMode | null;
+  mode_raw: string | null;
+  formats: AudioFormatRow[];
+  supported_encodings: string[];
+  active_device: string | null;
+}
+
+export interface MediaApps {
+  kodi: boolean;
+  plex: boolean;
+  /// Installed per-app refresh-rate app's package id, if any.
+  refresh_rate_app: string | null;
+}
+
+export type AdjustRefreshRate = "off" | "always" | "on_start_stop" | "on_start";
+
+export interface KodiProfile {
+  adjust_refresh_rate: AdjustRefreshRate;
+  sync_playback_to_display: boolean;
+  hdr_display: boolean;
+  passthrough: boolean;
+  ac3_passthrough: boolean;
+  eac3_passthrough: boolean;
+  dts_passthrough: boolean;
+  truehd_passthrough: boolean;
+  dtshd_passthrough: boolean;
+  ac3_transcode: boolean;
+  resolution_whitelist: string[];
+  whitelist_pulldown: boolean;
+  whitelist_double_refresh: boolean;
+}
+
+export interface StageResult {
+  ok: boolean;
+  message: string;
+  device_path: string;
+}
+
 export function deviceTypeLabel(t: DeviceType): string {
   switch (t) {
     case "shield":
