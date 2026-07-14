@@ -17,6 +17,20 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## v2-2.2.2
+
+- **Keep after reboot.** Android resets `background_process_limit` to Standard
+  on every restart, and the device genuinely can't fix that itself: there's no
+  cron on Android, the ADB user isn't root so it can't install a boot script,
+  and the one loophole that would let an on-device app do it — Shizuku
+  self-starting via wireless debugging — doesn't exist on Shield, where NVIDIA
+  ships no wireless-debugging UI at all. So the app does it. Tick **Keep after
+  reboot** under Background Process Limit and your choice is re-applied the next
+  time the app connects to that device, with a banner saying what it restored.
+  Pins are stored per device and re-applied by comparing the device's current
+  value against the one you picked, so anything that resets the setting is
+  caught, not just a reboot.
+
 ## v2-2.2.1
 
 - **Shizuku: fixed "Set up Shizuku", now "Install / Start".** The old flow ran

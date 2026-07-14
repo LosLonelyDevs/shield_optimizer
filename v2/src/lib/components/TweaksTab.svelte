@@ -8,6 +8,7 @@
     CurrentDisplayScaling,
     PrivateDnsState,
     DeviceType,
+    BootTweak,
   } from "$lib/types";
   import { isDeviceType, deviceNoun } from "$lib/types";
 
@@ -181,11 +182,43 @@
       const r = await api.writeSetting(serial, namespace, key, value);
       tweaksActionMessage = `${key} → ${value || "(default)"}: ${r.message.trim()}`;
       await loadTweaks();
+      // Keep a pin pointing at the value the user just chose, so re-applying
+      // after a reboot restores this selection rather than a stale one.
+      // Picking Standard clears the pin — that's already what a reboot gives us.
+      if (pinnedKeys.has(key)) await pinTweak(namespace, key, value);
     } catch (e) {
       tweaksActionMessage = `${key}: ${e}`;
     } finally {
       tweaksActionBusy = null;
     }
+  }
+
+  // Settings pinned to be re-applied after a reboot.
+  let bootTweaks = $state<BootTweak[]>([]);
+  const pinnedKeys = $derived(new Set(bootTweaks.map((t) => t.key)));
+
+  async function loadBootTweaks() {
+    try {
+      bootTweaks = await api.listBootTweaks(serial);
+    } catch {
+      bootTweaks = [];
+    }
+  }
+
+  async function pinTweak(namespace: SettingNamespace, key: string, value: string) {
+    try {
+      bootTweaks = await api.setBootTweak(serial, namespace, key, value);
+    } catch (e) {
+      tweaksActionMessage = `${key}: ${e}`;
+    }
+  }
+
+  /// Toggle the pin for background_process_limit. Pinning stores whatever the
+  /// device currently reports, so there's nothing to re-apply on Standard.
+  async function toggleBgLimitPin() {
+    const key = "background_process_limit";
+    const value = pinnedKeys.has(key) ? "" : (tweaks?.background_process_limit ?? "");
+    await pinTweak("global", key, value);
   }
 
   // Animation triple is one logical control — write all three keys in one go.
@@ -229,7 +262,10 @@
     }
   }
 
-  onMount(loadTweaks);
+  onMount(() => {
+    loadTweaks();
+    loadBootTweaks();
+  });
 </script>
 
 <div class="card" role="tabpanel" tabindex={0} id="tabpanel-tweaks" aria-labelledby="tab-tweaks">
@@ -446,10 +482,11 @@
     <p class="muted small">
       Caps how many apps stay alive in the background — frees RAM and can make the
       {noun} feel snappier (2 is a good balance). <strong>Heads up:</strong> Android
-      resets this to Standard on every reboot (a platform limitation, not a bug), so
-      you'll need to re-apply it after a restart.
+      resets this to Standard on every reboot (a platform limitation, not a bug).
+      Tick <em>Keep after reboot</em> below and this app will put your choice back
+      the next time it connects.
     </p>
-    <p class="rec">★ Recommended: <strong>≤ 2</strong> — frees RAM and keeps the UI snappy without starving apps you actually use. Re-apply after each reboot. Leave on <em>Standard</em> if you never hit slowdowns.</p>
+    <p class="rec">★ Recommended: <strong>≤ 2</strong> — frees RAM and keeps the UI snappy without starving apps you actually use. Leave on <em>Standard</em> if you never hit slowdowns.</p>
     <div class="tweak-row">
       <div>
         <div class="current">Current: <strong>{bgLimitLabel(tweaks.background_process_limit)}</strong></div>
@@ -479,6 +516,22 @@
         {/each}
       </div>
     </div>
+    <label class="pin-row">
+      <input
+        type="checkbox"
+        checked={pinnedKeys.has("background_process_limit")}
+        disabled={!tweaks?.background_process_limit}
+        onchange={toggleBgLimitPin}
+      />
+      <span>
+        Keep after reboot
+        <span class="muted small">
+          — the {noun} can't restore this itself (no root, and Android TV has no
+          wireless-debugging pairing), so this app re-applies it on the next connect.
+          Requires opening this app after the {noun} restarts.
+        </span>
+      </span>
+    </label>
 
     <h3>Long Press Timeout</h3>
     <p class="muted small">
@@ -709,6 +762,20 @@
     flex-direction: column;
     gap: 0.4rem;
     margin: 0.4rem 0 0.8rem;
+  }
+  .pin-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0;
+    cursor: pointer;
+  }
+  .pin-row input {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+  }
+  .pin-row input:disabled {
+    cursor: not-allowed;
   }
   .tweak-row {
     display: flex;

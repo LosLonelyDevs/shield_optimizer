@@ -6,6 +6,7 @@
 pub mod apps;
 pub mod audio;
 pub mod backup;
+pub mod boot_tweaks;
 pub mod console;
 pub mod devices;
 pub mod display;

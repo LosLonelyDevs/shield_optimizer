@@ -50,6 +50,8 @@ import type {
   SendTextResult,
   SetLauncherResult,
   SettingNamespace,
+  BootTweak,
+  ReapplyResult,
   SnapshotApplyPlan,
   SnapshotFile,
   SystemInfo,
@@ -279,6 +281,18 @@ export const api = {
     invoke<ActionResult>("set_play_protect", { serial, enabled }),
   setupShizuku: (serial: string) =>
     invoke<ActionResult>("setup_shizuku", { serial }),
+
+  // Settings pinned to survive a reboot.
+  listBootTweaks: (serial: string) =>
+    invoke<BootTweak[]>("list_boot_tweaks", { serial }),
+  setBootTweak: (
+    serial: string,
+    namespace: SettingNamespace,
+    key: string,
+    value: string,
+  ) => invoke<BootTweak[]>("set_boot_tweak", { serial, namespace, key, value }),
+  reapplyBootTweaks: (serial: string) =>
+    invoke<ReapplyResult>("reapply_boot_tweaks", { serial }),
 
   // scrcpy mirror window (launched from PATH).
   mirrorScreen: (serial: string) =>

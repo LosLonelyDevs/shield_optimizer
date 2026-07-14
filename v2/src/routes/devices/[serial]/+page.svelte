@@ -183,6 +183,19 @@
     }
   }
 
+  // Settings the user pinned that Android drops on reboot (background process
+  // limit, chiefly). The device can't restore them itself, so we do it here on
+  // connect. No-op unless something actually drifted.
+  let reapplyMessage = $state("");
+  async function reapplyBootTweaks() {
+    try {
+      const r = await api.reapplyBootTweaks(serial);
+      if (r.reapplied.length > 0 || !r.ok) reapplyMessage = r.message;
+    } catch {
+      // Best-effort: a failure here must never block the device page.
+    }
+  }
+
   async function clearCaches() {
     trimBusy = true;
     trimMessage = "";
@@ -1218,6 +1231,7 @@
 
   onMount(() => {
     loadDevice();
+    reapplyBootTweaks();
     // Global list — load once; it survives device switches (not cleared in
     // resetDeviceState).
     loadSafetyOverrides();
@@ -1227,6 +1241,13 @@
 <div class="back-row">
   <button onclick={() => goto("/")}>← Back to devices</button>
 </div>
+
+{#if reapplyMessage}
+  <div class="reapply-banner">
+    <span>{reapplyMessage}</span>
+    <button class="small-action" onclick={() => (reapplyMessage = "")}>Dismiss</button>
+  </div>
+{/if}
 
 {#if deviceErr}
   <div class="error">{deviceErr}</div>
@@ -2161,6 +2182,17 @@
 {/if}
 
 <style>
+  .reapply-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2, transparent);
+  }
   .back-row {
     margin-bottom: 1rem;
   }

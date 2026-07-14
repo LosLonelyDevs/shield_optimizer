@@ -12,8 +12,8 @@ pub mod engine;
 use std::path::PathBuf;
 
 use commands::{
-    apps, audio, backup, console, devices, display, files, health, input, install, launcher,
-    loader, media_apps, mirror, optimize, quick_install, reboot, recording, recovery,
+    apps, audio, backup, boot_tweaks, console, devices, display, files, health, input, install,
+    launcher, loader, media_apps, mirror, optimize, quick_install, reboot, recording, recovery,
     safety_overrides, scan, screenshot, sideload, snapshot, system, tuning, update, AppState,
 };
 
@@ -159,6 +159,9 @@ pub fn run() {
             quick_install::list_quick_apps,
             quick_install::install_quick_app,
             quick_install::setup_shizuku,
+            boot_tweaks::list_boot_tweaks,
+            boot_tweaks::set_boot_tweak,
+            boot_tweaks::reapply_boot_tweaks,
             system::set_play_protect,
             mirror::mirror_screen,
         ])

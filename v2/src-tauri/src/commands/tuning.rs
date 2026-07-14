@@ -80,7 +80,11 @@ pub struct WriteResult {
 /// Build the `settings` shell command for a write/delete, with the safety
 /// checks that keep a malformed UI request from writing somewhere unexpected
 /// or breaking out of the shell. Pure so it can be unit-tested.
-fn build_setting_command(namespace: &str, key: &str, value: &str) -> Result<String, String> {
+pub(super) fn build_setting_command(
+    namespace: &str,
+    key: &str,
+    value: &str,
+) -> Result<String, String> {
     // Whitelist namespaces.
     if !matches!(namespace, "global" | "secure" | "system") {
         return Err(format!(

@@ -319,6 +319,12 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return false;
     case "get_tweaks":
       return tweaks;
+    case "list_boot_tweaks":
+      return [{ namespace: "global", key: "background_process_limit", value: "2" }];
+    case "set_boot_tweak":
+      return [{ namespace: "global", key: "background_process_limit", value: "2" }];
+    case "reapply_boot_tweaks":
+      return { reapplied: [], ok: true, message: "" };
     case "list_dir":
       return demoFiles(args.path as string);
     case "get_display_scaling":

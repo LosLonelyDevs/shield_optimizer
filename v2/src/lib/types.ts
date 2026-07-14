@@ -317,6 +317,23 @@ export interface TweaksState {
 
 export type SettingNamespace = "global" | "secure" | "system";
 
+/// A setting pinned to survive a reboot. Android drops some settings (notably
+/// background_process_limit) back to their default on restart, and the device
+/// can't re-apply them itself — no cron, no root, and Shield ships no
+/// wireless-debugging UI — so the app re-writes them on the next connect.
+export interface BootTweak {
+  namespace: SettingNamespace;
+  key: string;
+  value: string;
+}
+
+export interface ReapplyResult {
+  /// Keys that had drifted and were re-written. Empty when nothing changed.
+  reapplied: string[];
+  ok: boolean;
+  message: string;
+}
+
 export interface SystemInfo {
   battery_percent: number | null;
   input_method: string | null;
