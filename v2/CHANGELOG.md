@@ -17,6 +17,19 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## v2-2.2.1
+
+- **Shizuku: fixed "Set up Shizuku", now "Install / Start".** The old flow ran
+  `start.sh` from external storage — a script current Shizuku no longer ships,
+  so setup silently failed on an up-to-date install. It now execs the native
+  starter (`libshizuku.so`) bundled in the APK, resolving the APK path at run
+  time because Android regenerates its directory hash on every app update. The
+  button is safe to press repeatedly: it skips the install when Shizuku is
+  already there and just (re)starts the service, which is what you need after a
+  reboot. No wireless-debugging pairing code required — Android TV never shows
+  one, and it isn't needed when the service is started over ADB. Success is now
+  confirmed against the device's process table instead of the starter's output.
+
 ## Unreleased
 
 Merged the Android TV Desktop Toolkit's feature set in and broadened the app

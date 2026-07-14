@@ -279,8 +279,9 @@
         <div>
           <div class="apk-name">Shizuku</div>
           <div class="muted small">
-            Install Shizuku and start its service so other apps can use elevated ADB
-            permissions — no root needed. The service stops on reboot; re-run after a restart.
+            Installs Shizuku if it's missing, then starts its service so other apps can use
+            elevated ADB permissions — no root, and no pairing code (Android TV never shows
+            one). The service stops on reboot; press this again to start it back up.
           </div>
           {#if shizukuMsg}
             <div class="install-result" class:ok={shizukuOk} class:bad={!shizukuOk}>
@@ -289,7 +290,7 @@
           {/if}
         </div>
         <button class="small-action" onclick={setupShizuku} disabled={shizukuBusy}>
-          {shizukuBusy ? "Setting up…" : "Set up Shizuku"}
+          {shizukuBusy ? "Starting…" : "Install / Start"}
         </button>
       </div>
     </div>

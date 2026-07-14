@@ -331,15 +331,62 @@ pub async fn install_quick_app(
 }
 
 const SHIZUKU_PKG: &str = "moe.shizuku.privileged.api";
-const SHIZUKU_START: &str = "/sdcard/Android/data/moe.shizuku.privileged.api/start.sh";
+const SHIZUKU_LEGACY_START: &str = "/sdcard/Android/data/moe.shizuku.privileged.api/start.sh";
 
-/// `setup_shizuku` — install Shizuku if missing, open it so it writes its
-/// `start.sh`, then run that script to start the ADB-backed Shizuku service.
-/// Reuses the quick-install downloader + Play-Protect wrap.
+/// Start Shizuku's service by exec'ing the native starter (`libshizuku.so`)
+/// bundled in its APK — the same binary the app's own start script runs. It
+/// only needs an ADB shell (uid 2000), which is exactly what we have, so none
+/// of the on-device wireless-debugging pairing flow is required. That matters
+/// on Shield: Android TV never exposes the pairing UI, so the in-app "start"
+/// path is a dead end there.
+///
+/// The APK directory name carries a random hash that Android regenerates on
+/// every app update, so it has to be resolved at run time via `pm path` rather
+/// than stored. `echo NO_STARTER` marks a Shizuku too old to ship the starter,
+/// which falls back to the legacy `start.sh`.
+const SHIZUKU_START_CMD: &str = concat!(
+    "p=$(pm path moe.shizuku.privileged.api | head -n1 | sed 's/^package://; s#/base.apk$##'); ",
+    "d=$(ls \"$p/lib\" 2>/dev/null | head -n1); ",
+    "if [ -n \"$d\" ] && [ -f \"$p/lib/$d/libshizuku.so\" ]; then \"$p/lib/$d/libshizuku.so\"; ",
+    "else echo NO_STARTER; fi"
+);
+
+/// True when `shizuku_server` is live on the device — the ground truth for
+/// "did it start", rather than trusting the starter's own chatter.
+///
+/// Polled, because the starter forks the server and exits before the child is
+/// in the process table: checking once, immediately, loses that race and reports
+/// a healthy start as a failure.
+async fn shizuku_running(adb: &std::sync::Arc<dyn AdbDriver>, serial: &str) -> bool {
+    for attempt in 0..6 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        if let Ok(o) = adb.shell(serial, "ps -A -o NAME").await {
+            if o.stdout.contains("shizuku_server") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `setup_shizuku` — install Shizuku if it's missing, then start its service.
+/// Safe to re-run: an existing install is left alone and only the service is
+/// (re)started, which is what makes this usable as a plain "start it again
+/// after a reboot" button. Reuses the quick-install downloader + Play-Protect
+/// wrap.
 #[tauri::command]
 pub async fn setup_shizuku(
     state: State<'_, AppState>,
     serial: String,
+) -> Result<crate::commands::apps::ActionResult, String> {
+    setup_shizuku_impl(state.inner(), &serial).await
+}
+
+pub async fn setup_shizuku_impl(
+    state: &AppState,
+    serial: &str,
 ) -> Result<crate::commands::apps::ActionResult, String> {
     use crate::commands::apps::ActionResult;
 
@@ -347,10 +394,11 @@ pub async fn setup_shizuku(
 
     // 1. Install if not already present.
     let installed = adb
-        .shell(&serial, &format!("pm list packages {SHIZUKU_PKG}"))
+        .shell(serial, &format!("pm list packages {SHIZUKU_PKG}"))
         .await
         .map(|o| o.stdout.contains(SHIZUKU_PKG))
         .unwrap_or(false);
+    let freshly_installed = !installed;
     if !installed {
         let app = QuickApp {
             name: "Shizuku".to_string(),
@@ -362,7 +410,7 @@ pub async fn setup_shizuku(
             fallback_url: None,
         };
         let abilist = adb
-            .shell(&serial, "getprop ro.product.cpu.abilist")
+            .shell(serial, "getprop ro.product.cpu.abilist")
             .await
             .map(|o| o.stdout.trim().to_string())
             .unwrap_or_default();
@@ -378,7 +426,7 @@ pub async fn setup_shizuku(
         tokio::fs::write(&tmp, &bytes)
             .await
             .map_err(|e| format!("write {}: {e}", tmp.display()))?;
-        let (msg, ok) = install_with_play_protect(&adb, &serial, &tmp.display().to_string()).await;
+        let (msg, ok) = install_with_play_protect(&adb, serial, &tmp.display().to_string()).await;
         let _ = tokio::fs::remove_file(&tmp).await;
         if !ok {
             return Ok(ActionResult {
@@ -388,57 +436,50 @@ pub async fn setup_shizuku(
         }
     }
 
-    // 2. Open the app so it drops its start.sh.
-    let _ = adb
-        .shell(
-            &serial,
-            &format!("monkey -p {SHIZUKU_PKG} -c android.intent.category.LAUNCHER 1"),
-        )
-        .await;
+    // 2. Start the service via the bundled native starter. Restarting an
+    // already-running server is fine — the starter kills the old process first.
+    let out = adb
+        .shell(serial, SHIZUKU_START_CMD)
+        .await
+        .map_err(|e| format!("start Shizuku: {e}"))?;
+    let mut combined = out.combined();
 
-    // 3. Poll for start.sh (the app writes it shortly after first launch).
-    let mut found = false;
-    for _ in 0..6 {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if let Ok(o) = adb
+    // 3. Pre-13 Shizuku has no native starter — fall back to the script it
+    // writes to external storage on first launch, opening the app to trigger it.
+    if combined.contains("NO_STARTER") {
+        let _ = adb
             .shell(
-                &serial,
-                &format!("[ -f {SHIZUKU_START} ] && echo FOUND || echo MISSING"),
+                serial,
+                &format!("monkey -p {SHIZUKU_PKG} -c android.intent.category.LAUNCHER 1"),
             )
+            .await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        combined = adb
+            .shell(serial, &format!("sh {SHIZUKU_LEGACY_START}"))
             .await
-        {
-            if o.stdout.contains("FOUND") {
-                found = true;
-                break;
-            }
-        }
+            .map(|o| o.combined())
+            .unwrap_or_default();
     }
-    if !found {
+
+    // 4. Trust the process table, not the starter's own output.
+    if shizuku_running(&adb, serial).await {
+        let prefix = if freshly_installed {
+            "Shizuku installed and started"
+        } else {
+            "Shizuku started"
+        };
         return Ok(ActionResult {
-            ok: false,
-            message: "Shizuku installed and opened, but its start.sh hasn't appeared yet. Open \
-                      Shizuku on the TV once (so it can initialize), then run setup again."
-                .to_string(),
+            ok: true,
+            message: format!(
+                "{prefix}. The service runs until the TV reboots — press this again after a \
+                 restart to bring it back."
+            ),
         });
     }
 
-    // 4. Run start.sh to bring up the service.
-    let out = adb
-        .shell(&serial, &format!("sh {SHIZUKU_START}"))
-        .await
-        .map_err(|e| format!("start Shizuku: {e}"))?;
-    let combined = out.combined();
-    let lc = combined.to_lowercase();
-    let ok = !lc.contains("error") && !lc.contains("denied") && !lc.contains("not found");
     Ok(ActionResult {
-        ok,
-        message: if ok {
-            "Shizuku service started. It stays up until the TV reboots — re-run setup after a \
-             reboot."
-                .to_string()
-        } else {
-            format!("Shizuku start.sh: {}", combined.trim())
-        },
+        ok: false,
+        message: format!("Shizuku didn't start: {}", combined.trim()),
     })
 }
 
@@ -477,6 +518,39 @@ mod tests {
         let url = select_url(&app, &[], &["arm64-v8a".into()]);
         // url source doesn't go through select_url, but the fallback path must hold.
         assert_eq!(url.unwrap(), "https://agrd.io/tvapk");
+    }
+
+    #[tokio::test]
+    async fn shizuku_starts_via_native_starter_when_already_installed() {
+        use crate::commands::test_support::{state_with, MockAdb};
+        let state = state_with(
+            MockAdb::default()
+                .on_shell("pm list packages", "package:moe.shizuku.privileged.api")
+                .on_shell("libshizuku.so", "info: shizuku_server pid is 1403")
+                .on_shell("ps -A -o NAME", "system_server\nshizuku_server\n"),
+        );
+        let r = setup_shizuku_impl(&state, "serial").await.unwrap();
+        assert!(r.ok, "should report success: {}", r.message);
+        assert!(
+            r.message.starts_with("Shizuku started"),
+            "an existing install should read as started, not installed: {}",
+            r.message
+        );
+    }
+
+    #[tokio::test]
+    async fn shizuku_fails_when_server_is_absent_from_process_table() {
+        use crate::commands::test_support::{state_with, MockAdb};
+        // Starter claims success, but no `shizuku_server` in `ps` — the process
+        // table is the ground truth, so this must not report ok.
+        let state = state_with(
+            MockAdb::default()
+                .on_shell("pm list packages", "package:moe.shizuku.privileged.api")
+                .on_shell("libshizuku.so", "info: starter begin")
+                .on_shell("ps -A -o NAME", "system_server\n"),
+        );
+        let r = setup_shizuku_impl(&state, "serial").await.unwrap();
+        assert!(!r.ok, "must not claim success without a running server");
     }
 
     #[tokio::test]
