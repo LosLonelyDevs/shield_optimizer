@@ -7,9 +7,14 @@
     DisplayScalePreset,
     CurrentDisplayScaling,
     PrivateDnsState,
+    DeviceType,
   } from "$lib/types";
+  import { isDeviceType, deviceNoun } from "$lib/types";
 
-  let { serial }: { serial: string } = $props();
+  let { serial, deviceType }: { serial: string; deviceType: DeviceType } = $props();
+
+  // Noun for inline copy on settings that apply to both device types.
+  const noun = $derived(deviceNoun(deviceType));
 
   // Best-practice recommendation per setting — the value we'd pick and why,
   // surfaced inline so users don't have to guess. Grounded in the Display/Audio
@@ -213,7 +218,7 @@
     displayScaleBusy = preset;
     displayScaleMessage = "";
     try {
-      const r = await api.setDisplayScaling(serial, preset);
+      const r = await api.setDisplayScaling(serial, preset, deviceType);
       displayScaleMessage = r.message.trim() || (r.ok ? "ok" : "no output");
       // Refresh the displayed current values.
       currentDisplayScaling = await api.getDisplayScaling(serial).catch(() => currentDisplayScaling);
@@ -247,7 +252,7 @@
       <p class="muted small mono action-message">{tweaksActionMessage}</p>
     {/if}
 
-    {#if netflixHooksState && netflixHooksState !== "missing"}
+    {#if isDeviceType(deviceType, "shield") && netflixHooksState && netflixHooksState !== "missing"}
       <h3>Nvidia System Hooks</h3>
       <p class="muted small">
         Controls Nvidia's system hooks (<code>{NETFLIX_HOOKS_PKG}</code>) which
@@ -366,7 +371,7 @@
       Master switch plus three sub-toggles. Disabling the master typically also
       turns off the sub-controls.
     </p>
-    <p class="rec">★ Recommended: <strong>On</strong> for all — lets the Shield power your TV on/off and switch to its HDMI input automatically. Turn off only if you get CEC conflicts (e.g. the TV grabbing input from another device).</p>
+    <p class="rec">★ Recommended: <strong>On</strong> for all — lets the {noun} power your TV on/off and switch to its HDMI input automatically. Turn off only if you get CEC conflicts (e.g. the TV grabbing input from another device).</p>
     <div class="tweak-grid">
       {#each [
         { key: "hdmi_control_enabled", label: "Master (control on/off)", value: tweaks.hdmi_control_enabled },
@@ -440,7 +445,7 @@
     <h3>Background Process Limit</h3>
     <p class="muted small">
       Caps how many apps stay alive in the background — frees RAM and can make the
-      Shield feel snappier (2 is a good balance). <strong>Heads up:</strong> Android
+      {noun} feel snappier (2 is a good balance). <strong>Heads up:</strong> Android
       resets this to Standard on every reboot (a platform limitation, not a bug), so
       you'll need to re-apply it after a restart.
     </p>
@@ -544,7 +549,8 @@
     <h3>Display Scaling</h3>
     <p class="muted small">
       Forces a specific resolution + density via <code>wm size</code> + <code>wm density</code>.
-      Mostly for Shield TV — useful for testing 1080p mode on a 4K device.
+      Useful for forcing 1080p on a 4K panel, or testing app layout at a different density.
+      The 4K preset uses your {noun}'s native width automatically.
     </p>
     {#if currentDisplayScaling}
       <div class="current-scaling muted small mono">
@@ -559,15 +565,15 @@
         disabled={displayScaleBusy !== null}
         onclick={() => applyDisplayScaling("uhd_4k")}
       >
-        <span class="scale-title">{displayScaleBusy === "uhd_4k" ? "Applying…" : "Shield 4K"}</span>
-        <span class="muted small">3839×2160, density 640</span>
+        <span class="scale-title">{displayScaleBusy === "uhd_4k" ? "Applying…" : "4K (2160p)"}</span>
+        <span class="muted small">{isDeviceType(deviceType, "shield") ? "3839" : "3840"}×2160, density 640</span>
       </button>
       <button
         class="scale-option"
         disabled={displayScaleBusy !== null}
         onclick={() => applyDisplayScaling("fhd_1080p")}
       >
-        <span class="scale-title">{displayScaleBusy === "fhd_1080p" ? "Applying…" : "Shield 1080p"}</span>
+        <span class="scale-title">{displayScaleBusy === "fhd_1080p" ? "Applying…" : "1080p (FHD)"}</span>
         <span class="muted small">1920×1080, density 320</span>
       </button>
       <button

@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 use commands::{
     apps, audio, backup, console, devices, display, files, health, input, install, launcher,
-    loader, media_apps, mirror, optimize, quick_install, reboot, recording, recovery, scan,
-    screenshot, sideload, snapshot, system, tuning, update, AppState,
+    loader, media_apps, mirror, optimize, quick_install, reboot, recording, recovery,
+    safety_overrides, scan, screenshot, sideload, snapshot, system, tuning, update, AppState,
 };
 
 /// Resolve the OS-appropriate app data root (snapshots live in a `snapshots`
@@ -100,6 +100,8 @@ pub fn run() {
             apps::app_memory_map,
             apps::app_usage_map,
             apps::safety_info,
+            safety_overrides::list_safety_overrides,
+            safety_overrides::set_safety_override,
             apps::trim_caches,
             apps::clear_app_cache,
             apps::clear_app_data,

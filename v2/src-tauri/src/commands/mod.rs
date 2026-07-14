@@ -23,6 +23,7 @@ pub mod quick_install;
 pub mod reboot;
 pub mod recording;
 pub mod recovery;
+pub mod safety_overrides;
 pub mod scan;
 pub mod screenshot;
 pub mod sideload;

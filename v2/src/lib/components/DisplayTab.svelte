@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/api";
-  import type { DisplayReport, MediaApps } from "$lib/types";
+  import type { DisplayReport, MediaApps, DeviceType } from "$lib/types";
+  import { isDeviceType, deviceNoun } from "$lib/types";
 
-  let { serial }: { serial: string } = $props();
+  let { serial, deviceType }: { serial: string; deviceType: DeviceType } = $props();
+
+  const noun = $derived(deviceNoun(deviceType));
 
   let report = $state<DisplayReport | null>(null);
   let loading = $state(false);
@@ -75,8 +78,8 @@
   </div>
   <p class="muted small">
     The panel's modes plus the one display setting ADB can change. The base HDMI
-    output mode (4K60 vs 59.94, Dolby Vision, color space) is NVIDIA-UI-only — see
-    the note at the bottom.
+    output mode (4K60 vs 59.94, Dolby Vision, color space) is set in the {noun}'s
+    own settings, not over ADB — see the note at the bottom.
   </p>
 
   {#if err}
@@ -142,7 +145,7 @@
 
     <h3>Per-App Refresh Rate</h3>
     <p class="muted small">
-      A dedicated app can switch the Shield's display mode per streaming app on launch
+      A dedicated app can switch the {noun}'s display mode per streaming app on launch
       (e.g. 4K@24 for Netflix). It needs <code>WRITE_SECURE_SETTINGS</code>, which ADB
       can grant. The per-app profiles live in the app's own storage, so set those in
       the app itself.
@@ -169,22 +172,36 @@
       <ul class="muted small">
         <li>Netflix / Disney+ / HBO Max / Prime Video → <strong>4K @ 24 Hz</strong></li>
         <li>European broadcast apps → <strong>4K @ 50 Hz</strong></li>
-        <li>BBC iPlayer → needs the Shield base mode at <strong>25/50 Hz</strong></li>
+        <li>BBC iPlayer → needs the {noun} base mode at <strong>25/50 Hz</strong></li>
         <li>Plex / Kodi / GeForce Now / Moonlight → <strong>skip</strong> (native handling)</li>
       </ul>
     </details>
 
-    <h3>Set on the device (not ADB-settable)</h3>
-    <p class="muted small">
-      NVIDIA UI-only — no ADB key exists. Set these under
-      <em>Settings → Device Preferences → Display &amp; Sound</em>:
-    </p>
-    <ul class="muted small oos">
-      <li>Base resolution / refresh (prefer 4K 60 Hz over 59.94 where offered)</li>
-      <li>Dolby Vision mode / Low-Latency Dolby Vision (developer option)</li>
-      <li>Match content color space / colorimetry</li>
-      <li>ALLM / Automatic Game Mode and its app list</li>
-    </ul>
+    {#if isDeviceType(deviceType, "shield")}
+      <h3>Set on the device (not ADB-settable)</h3>
+      <p class="muted small">
+        NVIDIA UI-only — no ADB key exists. Set these under
+        <em>Settings → Device Preferences → Display &amp; Sound</em>:
+      </p>
+      <ul class="muted small oos">
+        <li>Base resolution / refresh (prefer 4K 60 Hz over 59.94 where offered)</li>
+        <li>Dolby Vision mode / Low-Latency Dolby Vision (developer option)</li>
+        <li>Match content color space / colorimetry</li>
+        <li>ALLM / Automatic Game Mode and its app list</li>
+      </ul>
+    {:else if isDeviceType(deviceType, "google_tv")}
+      <h3>Set on the device (not ADB-settable)</h3>
+      <p class="muted small">
+        Google TV UI-only — no ADB key exists. Set these under
+        <em>Settings → Display &amp; Sound → Advanced display settings</em>:
+      </p>
+      <ul class="muted small oos">
+        <li>Resolution / refresh (prefer 4K 60 Hz over 59.94 where offered)</li>
+        <li>Preferred dynamic range / Dolby Vision &amp; HDR format</li>
+        <li>Match content frame rate / color space</li>
+        <li>Game mode (ALLM), where the panel supports it</li>
+      </ul>
+    {/if}
   {/if}
 </div>
 

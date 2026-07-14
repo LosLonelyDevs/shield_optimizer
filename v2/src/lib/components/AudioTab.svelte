@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/api";
-  import type { AudioReport, MediaApps, SurroundMode, KodiProfile, AdjustRefreshRate } from "$lib/types";
+  import type { AudioReport, MediaApps, SurroundMode, KodiProfile, AdjustRefreshRate, DeviceType } from "$lib/types";
+  import { deviceNoun } from "$lib/types";
 
-  let { serial }: { serial: string } = $props();
+  let { serial, deviceType }: { serial: string; deviceType: DeviceType } = $props();
+
+  const noun = $derived(deviceNoun(deviceType));
 
   let report = $state<AudioReport | null>(null);
   let loading = $state(false);
@@ -174,10 +177,10 @@
     {:else}
       <p class="rec">
         No formats detected from your receiver, so there's nothing to recommend from. On a
-        <strong>Shield → TV → eARC → AVR</strong> path the Shield reads the <em>TV's</em> audio
+        <strong>{noun} → TV → eARC → AVR</strong> path the {noun} reads the <em>TV's</em> audio
         capabilities, not the AVR's. To fix: set the TV's digital audio output to
         <strong>Bitstream/Passthrough</strong> and enable <strong>eARC</strong>, then reboot the
-        Shield — or plug the Shield <strong>directly into the AVR</strong>. On eARC you can safely
+        {noun} — or plug the {noun} <strong>directly into the AVR</strong>. On eARC you can safely
         set Surround mode to <strong>Manual</strong> and enable all six below; eARC carries them.
       </p>
     {/if}
@@ -202,8 +205,8 @@
       <div class="muted small">{report.supported_encodings.join(" · ")}</div>
     {:else}
       <div class="muted small">
-        Nothing reported — the Shield isn't receiving your receiver's audio capabilities
-        (see the note above). This is common on Shield over a TV/eARC path and isn't a
+        Nothing reported — the {noun} isn't receiving your receiver's audio capabilities
+        (see the note above). This is common on a {noun} over a TV/eARC path and isn't a
         per-app limitation; Manual mode works regardless.
       </div>
     {/if}

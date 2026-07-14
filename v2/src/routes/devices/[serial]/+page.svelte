@@ -59,6 +59,12 @@
   /// in batch whenever the health report refreshes so each row knows whether
   /// the Disable button should be hard-blocked.
   let safetyMap = $state<Record<string, Safety>>({});
+  /// Packages the user has manually declared safe (global, persisted via
+  /// `safety-overrides.json`). Layered over `safetyMap` so a Caution / curated
+  /// risk badge the user has decided they understand stops shouting. Never
+  /// includes NEVER_DISABLE packages — the backend refuses to add them.
+  let safetyOverrides = $state<Record<string, boolean>>({});
+  let overrideBusy = $state<string | null>(null);
 
   let renaming = $state(false);
   let renameValue = $state("");
@@ -231,6 +237,38 @@
       reportErr = String(e);
     } finally {
       reportLoading = false;
+    }
+  }
+
+  /// Load the user's manual "safe" declarations once. Global (not per-device),
+  /// so it's loaded on mount and left intact across device switches. Best-effort
+  /// — a failure just means no overrides are applied.
+  async function loadSafetyOverrides() {
+    try {
+      const list = await api.listSafetyOverrides();
+      const map: Record<string, boolean> = {};
+      for (const p of list) map[p] = true;
+      safetyOverrides = map;
+    } catch {
+      // Non-fatal; the memory table falls back to the raw classification.
+    }
+  }
+
+  /// Toggle a package's manual "safe" declaration from its risk hovercard. The
+  /// backend returns the full updated list (and rejects NEVER_DISABLE packages),
+  /// so we just replace our local copy from its response.
+  async function toggleSafetyOverride(pkg: string) {
+    const currentlySafe = !!safetyOverrides[pkg];
+    overrideBusy = pkg;
+    try {
+      const list = await api.setSafetyOverride(pkg, !currentlySafe);
+      const map: Record<string, boolean> = {};
+      for (const p of list) map[p] = true;
+      safetyOverrides = map;
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      overrideBusy = null;
     }
   }
 
@@ -517,18 +555,26 @@
       return;
     }
 
+    // A manual "safe" declaration softens the confirm: the user has told us
+    // they understand this package, so we drop the loud caution / high-risk
+    // warnings (the NEVER_DISABLE hard block above still can't be overridden).
+    const overridden = !!safetyOverrides[pkg];
+
     const entry = catalogEntry(pkg);
     let prompt = `Disable ${pkg} (${mb.toFixed(0)} MB)?\n\n`;
-    if (safety.kind === "caution") {
+    if (overridden) {
+      prompt += "✓ You marked this app safe.\n\n";
+    }
+    if (safety.kind === "caution" && !overridden) {
       prompt += `⚠ ${safety.reason}\n\n`;
     }
     if (entry) {
-      prompt += `Risk tier: ${entry.risk.toUpperCase()}\n`;
+      prompt += `Risk tier: ${overridden ? "SAFE (marked by you)" : entry.risk.toUpperCase()}\n`;
       prompt += `${entry.optimize_description}\n\n`;
-      if (entry.risk === "high" || entry.risk === "advanced") {
+      if (!overridden && (entry.risk === "high" || entry.risk === "advanced")) {
         prompt += "⚠ HIGH RISK — this may break system features. Re-enable via Emergency Recovery if something goes wrong.\n\n";
       }
-    } else if (safety.kind === "safe") {
+    } else if (safety.kind === "safe" || overridden) {
       prompt += "ℹ This package is not in the curated bloat catalog — disabling is allowed but unverified. Re-enable via Emergency Recovery if something goes wrong.\n\n";
     }
     prompt += "Proceed?";
@@ -1170,7 +1216,12 @@
     loadedSerial = s;
   });
 
-  onMount(loadDevice);
+  onMount(() => {
+    loadDevice();
+    // Global list — load once; it survives device switches (not cleared in
+    // resetDeviceState).
+    loadSafetyOverrides();
+  });
 </script>
 
 <div class="back-row">
@@ -1463,6 +1514,27 @@
                 {@const entry = catalogEntry(m.package)}
                 {@const safety = safetyMap[m.package] ?? { kind: "safe" }}
                 {@const blocked = safety.kind === "never_disable"}
+                {@const overridden = !!safetyOverrides[m.package]}
+                {@const reason = safety.kind !== "safe" ? safety.reason : null}
+                {@const riskClass = blocked
+                  ? "risk-blocked"
+                  : overridden
+                    ? "risk-safe"
+                    : entry
+                      ? "risk-" + entry.risk
+                      : safety.kind === "caution"
+                        ? "risk-medium"
+                        : "risk-unknown"}
+                {@const riskText = blocked
+                  ? "SYSTEM"
+                  : overridden
+                    ? "SAFE"
+                    : safety.kind === "caution"
+                      ? "CAUTION"
+                      : riskLabel(entry)}
+                {@const softenable = !blocked && (safety.kind === "caution" || (!!entry && entry.risk !== "safe"))}
+                {@const dangerAction = !overridden && (!entry || entry.risk === "high" || entry.risk === "advanced" || safety.kind === "caution")}
+                {@const hasCard = blocked || overridden || safety.kind === "caution" || !!entry}
                 <tr class:dim={blocked}>
                   <td
                     class="num"
@@ -1472,22 +1544,65 @@
                     {m.mb.toFixed(1)} MB
                   </td>
                   <td class="pkg">{m.package}</td>
-                  <td
-                    class={`center risk ${entry
-                      ? "risk-" + entry.risk
-                      : blocked
-                        ? "risk-blocked"
-                        : safety.kind === "caution"
-                          ? "risk-medium"
-                          : "risk-unknown"}`}
-                    title={safety.kind !== "safe" ? safety.reason : ""}
-                  >
-                    {#if blocked}
-                      SYSTEM
-                    {:else if safety.kind === "caution"}
-                      CAUTION
+                  <td class={`center risk ${riskClass}`}>
+                    {#if hasCard}
+                      <span class="risk-wrap">
+                        <button
+                          type="button"
+                          class="risk-trigger"
+                          aria-label={`Risk details for ${m.package}`}
+                        >{riskText}</button>
+                        <span class="hovercard" role="tooltip">
+                          <span class="hc-name">{entry?.name ?? m.package}</span>
+                          <span class="hc-pkg mono">{m.package}</span>
+                          <span class="hc-risk">
+                            Risk: <strong class={riskClass}>{riskText}</strong>
+                          </span>
+                          {#if overridden}
+                            <p class="hc-body hc-ok">✓ You marked this app safe — its risk warnings are suppressed.</p>
+                          {/if}
+                          {#if entry}
+                            <p class="hc-body">{entry.optimize_description}</p>
+                          {/if}
+                          {#if reason}
+                            <p class="hc-body hc-why">⚠ {reason}</p>
+                          {/if}
+                          {#if !entry && !reason && !overridden}
+                            <p class="hc-body muted">Not in the curated catalog — disabling is allowed but unverified.</p>
+                          {/if}
+                          {#if blocked}
+                            <p class="hc-note">🔒 Protected system package — can't be disabled or marked safe (it would brick the device).</p>
+                          {:else if overridden}
+                            <button
+                              class="small-action subtle hc-action"
+                              onclick={() => toggleSafetyOverride(m.package)}
+                              disabled={overrideBusy === m.package}
+                            >
+                              {#if overrideBusy === m.package}
+                                <span class="busy"><span class="spinner" aria-hidden="true"></span>Saving…</span>
+                              {:else}
+                                Restore risk classification
+                              {/if}
+                            </button>
+                          {:else if softenable}
+                            <button
+                              class="small-action hc-action"
+                              onclick={() => toggleSafetyOverride(m.package)}
+                              disabled={overrideBusy === m.package}
+                            >
+                              {#if overrideBusy === m.package}
+                                <span class="busy"><span class="spinner" aria-hidden="true"></span>Saving…</span>
+                              {:else}
+                                Mark as safe / no risk
+                              {/if}
+                            </button>
+                          {:else}
+                            <p class="hc-note muted">Already classified safe.</p>
+                          {/if}
+                        </span>
+                      </span>
                     {:else}
-                      {riskLabel(entry)}
+                      {riskText}
                     {/if}
                   </td>
                   <td class="row-actions">
@@ -1516,7 +1631,7 @@
                     {:else}
                       <button
                         class="small-action"
-                        class:danger={!entry || (entry && (entry.risk === "high" || entry.risk === "advanced")) || safety.kind === "caution"}
+                        class:danger={dangerAction}
                         onclick={() => safeDisableFromMemory(m.package, m.mb)}
                         disabled={appActionBusy === m.package}
                         title="pm disable-user --user 0 {m.package}"
@@ -1993,17 +2108,17 @@
        their state and fetched data persist across tab switches. -->
   {#if visited.tweaks}
     <div hidden={activeTab !== "tweaks"}>
-      <TweaksTab {serial} />
+      <TweaksTab {serial} deviceType={device.device_type} />
     </div>
   {/if}
   {#if visited.display}
     <div hidden={activeTab !== "display"}>
-      <DisplayTab {serial} />
+      <DisplayTab {serial} deviceType={device.device_type} />
     </div>
   {/if}
   {#if visited.audio}
     <div hidden={activeTab !== "audio"}>
-      <AudioTab {serial} />
+      <AudioTab {serial} deviceType={device.device_type} />
     </div>
   {/if}
   {#if visited.system}
@@ -2202,6 +2317,113 @@
     font-family: ui-monospace, monospace;
     font-size: 0.78rem;
     letter-spacing: 0.04em;
+    overflow: visible;
+  }
+  /* Risk badge → hovercard. The card is a *sibling* of the trigger button
+     (not a child — a button can't contain the card's "Mark as safe" button),
+     both inside a position:relative wrapper. A transparent ::before bridge
+     spans the 6px gap so moving the cursor from trigger to card never drops
+     :hover and the card's action button stays reachable. */
+  .risk-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .risk-trigger {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    cursor: pointer;
+    border-bottom: 1px dotted currentColor;
+    line-height: 1.1;
+  }
+  .risk-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+  .hovercard {
+    position: absolute;
+    z-index: 60;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 280px;
+    max-width: 78vw;
+    text-align: left;
+    color: var(--fg-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 0.8rem;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 0.85rem;
+    letter-spacing: normal;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-3px);
+    transition:
+      opacity 0.1s ease,
+      transform 0.1s ease,
+      visibility 0.1s;
+    pointer-events: none;
+  }
+  /* Invisible hover bridge across the gap between trigger and card. */
+  .hovercard::before {
+    content: "";
+    position: absolute;
+    top: -8px;
+    left: 0;
+    right: 0;
+    height: 8px;
+  }
+  .risk-wrap:hover .hovercard,
+  .risk-wrap:focus-within .hovercard {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .hc-name {
+    display: block;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .hc-pkg {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--fg-faint);
+    margin-top: 0.1rem;
+    word-break: break-all;
+  }
+  .hc-risk {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--fg-secondary);
+    margin-top: 0.45rem;
+  }
+  .hc-body {
+    margin: 0.45rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: var(--fg-primary);
+  }
+  .hc-why {
+    color: var(--warn);
+  }
+  .hc-ok {
+    color: var(--ok);
+  }
+  .hc-note {
+    margin: 0.55rem 0 0;
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+  }
+  .hc-action {
+    margin-top: 0.6rem;
   }
   .small {
     font-size: 0.82rem;

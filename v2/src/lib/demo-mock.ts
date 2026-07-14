@@ -72,10 +72,31 @@ const health: HealthReport = {
     { package: "com.google.android.gms", mb: 142 },
     { package: "com.disney.disneyplus", mb: 131 },
     { package: "com.spotify.tv.android", mb: 118 },
+    { package: "com.google.android.katniss", mb: 112 },
     { package: "tv.twitch.android.app", mb: 104 },
     { package: "com.android.systemui", mb: 96 },
     { package: "com.nvidia.shield.remote.server", mb: 71 },
   ],
+};
+
+// A faithful subset of engine::safety for the packages that surface in the
+// demo memory table — so the risk badges + hovercards render truthfully
+// offline (SYSTEM for framework processes, CAUTION for the voice/Assistant
+// app the Health screen calls out). Everything else is implicitly Safe.
+const demoSafety: Record<string, { kind: "never_disable" | "caution"; reason: string }> = {
+  "com.android.systemui": {
+    kind: "never_disable",
+    reason: "System UI — the launcher's host process. Disabling makes the device unusable.",
+  },
+  "com.google.android.gms": {
+    kind: "never_disable",
+    reason: "Google Play Services. Disabling breaks every Google app + most third-party apps.",
+  },
+  "com.google.android.katniss": {
+    kind: "caution",
+    reason:
+      "Google app / Assistant — provides the device's voice RecognitionService. Disabling kills the remote mic button AND in-app voice search (SmartTube, etc.).",
+  },
 };
 
 const launchers: LauncherStatus[] = [
@@ -284,7 +305,12 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
         "com.showtime.standalone": { last_used: null, launch_count: 0 },
       };
     case "safety_info":
-      return { kind: "safe" };
+      return demoSafety[args.package as string] ?? { kind: "safe" };
+    case "list_safety_overrides":
+      return [];
+    case "set_safety_override":
+      // Echo back a one-item list so the UI reflects the toggle in demo mode.
+      return args.safe ? [args.package as string] : [];
     case "list_launchers":
       return launchers;
     case "current_launcher":

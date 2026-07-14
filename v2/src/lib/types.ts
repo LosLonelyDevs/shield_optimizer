@@ -480,6 +480,28 @@ export function deviceTypeLabel(t: DeviceType): string {
   }
 }
 
+/// True when the connected device is the given device-specific class. Used to
+/// gate Shield-only / Google-TV-only config sections. For an Unknown device
+/// (detection failed) this is always false, so device-specific sections hide —
+/// safer than showing controls that may not apply to an unrecognized box.
+export function isDeviceType(t: DeviceType, specificTo: "shield" | "google_tv"): boolean {
+  return t === specificTo;
+}
+
+/// Short noun for the connected device, for inline copy on settings that apply
+/// to both device types (e.g. "lets the Shield power your TV" → device-correct
+/// wording). Falls back to a neutral "device" for Unknown.
+export function deviceNoun(t: DeviceType): string {
+  switch (t) {
+    case "shield":
+      return "Shield";
+    case "google_tv":
+      return "Google TV";
+    case "unknown":
+      return "device";
+  }
+}
+
 export function riskBadgeClass(r: RiskTier): string {
   return `risk-${r}`;
 }

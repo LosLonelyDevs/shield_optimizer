@@ -152,6 +152,13 @@ export const api = {
   appUsageMap: (serial: string) =>
     invoke<Record<string, import("$lib/types").AppUsage>>("app_usage_map", { serial }),
   safetyInfo: (pkg: string) => invoke<Safety>("safety_info", { package: pkg }),
+  /// Packages the user has manually declared safe (global, persisted). Layered
+  /// over the raw safety classification on the Health page.
+  listSafetyOverrides: () => invoke<string[]>("list_safety_overrides"),
+  /// Mark `pkg` safe (`safe = true`) or clear the override. Returns the full
+  /// updated list. Rejects (throws) for NEVER_DISABLE packages.
+  setSafetyOverride: (pkg: string, safe: boolean) =>
+    invoke<string[]>("set_safety_override", { package: pkg, safe }),
   trimCaches: (serial: string) => invoke<ActionResult>("trim_caches", { serial }),
   clearAppCache: (serial: string, pkg: string) =>
     invoke<ActionResult>("clear_app_cache", { serial, package: pkg }),
@@ -211,8 +218,8 @@ export const api = {
     key: string,
     value: string,
   ) => invoke<WriteResult>("write_setting", { serial, namespace, key, value }),
-  setDisplayScaling: (serial: string, preset: DisplayScalePreset) =>
-    invoke<DisplayScaleResult>("set_display_scaling", { serial, preset }),
+  setDisplayScaling: (serial: string, preset: DisplayScalePreset, deviceType: DeviceType) =>
+    invoke<DisplayScaleResult>("set_display_scaling", { serial, preset, deviceType }),
   getDisplayScaling: (serial: string) =>
     invoke<CurrentDisplayScaling>("get_display_scaling", { serial }),
   getPrivateDns: (serial: string) =>
