@@ -164,6 +164,9 @@
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 0.85rem;
     letter-spacing: normal;
+    /* Host cells set nowrap to keep the pill on one line; the card's prose
+       must wrap regardless of which cell it's mounted in. */
+    white-space: normal;
     opacity: 0;
     visibility: hidden;
     transform: translateY(-3px);

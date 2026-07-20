@@ -149,6 +149,8 @@
   );
   let appActionBusy = $state<string | null>(null);
   let appActionMessage = $state("");
+  /// Package whose per-row Actions dropdown is open (one at a time).
+  let appMenuOpen = $state<string | null>(null);
   /// Package the "Copy to another device" panel is open for, plus targets.
   let clonePkg = $state<string | null>(null);
   let cloneTargets = $state<Device[]>([]);
@@ -1256,6 +1258,13 @@
   });
 </script>
 
+<svelte:window
+  onclick={() => (appMenuOpen = null)}
+  onkeydown={(e) => {
+    if (e.key === "Escape") appMenuOpen = null;
+  }}
+/>
+
 <div class="back-row">
   <button onclick={() => goto("/")}>← Back to devices</button>
 </div>
@@ -1756,8 +1765,9 @@
           <strong>Risk</strong> explains itself on hover — including how the rating was
           decided, and a button to mark an app safe on this device.
           <strong>Recommended</strong> is what v1's Optimize wizard would pick for you —
-          click to apply, or leave it. <strong>Tools</strong> has the Play Store link
-          plus APK backup and copy-to-another-device.
+          ✅ means nothing to do; a green or red button applies the suggested change.
+          <strong>Tools</strong> holds each row's actions: enable/disable, APK backup,
+          copy-to-another-device, and the Play Store link.
         </p>
         {#if appActionMessage}
           <p class="muted small mono action-message">
@@ -1809,11 +1819,9 @@
               >
                 {#snippet actions()}
                 <td class="rec-cell">
-                  <div class="tool-group start">
                   {#if rec.kind === "act"}
                     <button
-                      class="small-action recommended"
-                      class:danger={rec.action === "uninstall"}
+                      class="small-action recommended danger"
                       onclick={() => applyRecommendation(a.package, rec.action)}
                       disabled={appActionBusy === a.package}
                       title={a.optimize_description}
@@ -1822,8 +1830,7 @@
                     </button>
                   {:else if rec.kind === "review"}
                     <button
-                      class="small-action review-action"
-                      class:danger={rec.action === "uninstall"}
+                      class="small-action review-action danger"
                       onclick={() => applyRecommendation(a.package, rec.action)}
                       disabled={appActionBusy === a.package}
                       title="You may not use this one — check the last-used cue, then {rec.action} if so."
@@ -1832,70 +1839,77 @@
                     </button>
                   {:else if rec.kind === "restore"}
                     <button
-                      class="small-action recommended"
+                      class="small-action rec-enable"
                       onclick={() => reinstallApp(a.package)}
                       disabled={appActionBusy === a.package}
                       title="cmd package install-existing — works for system apps still on /system"
                     >
                       {appActionBusy === a.package ? "…" : rec.label}
                     </button>
-                  {:else if rec.kind === "done"}
-                    <span class="muted small done">✓ {rec.label}</span>
                   {:else}
-                    <span class="muted small">Keep</span>
+                    <span
+                      class="done-check"
+                      role="img"
+                      aria-label={rec.kind === "done" ? rec.label : "Keep — nothing to do"}
+                      title={rec.kind === "done" ? rec.label : "Keep — nothing to do"}
+                    >✅</span>
                   {/if}
-
-                  {#if state === "enabled" && rec.kind !== "act" && !(rec.kind === "review" && rec.action === "disable")}
-                    <button
-                      class="small-action subtle"
-                      onclick={() => disableApp(a.package)}
-                      disabled={appActionBusy === a.package}
-                      title="pm disable-user --user 0"
-                    >Disable</button>
-                  {/if}
-                  {#if state === "disabled"}
-                    <button
-                      class="small-action subtle"
-                      onclick={() => enableApp(a.package)}
-                      disabled={appActionBusy === a.package}
-                      title="pm enable"
-                    >Enable</button>
-                  {/if}
-                  </div>
                 </td>
                 <td class="center tools-cell">
-                  <div class="tool-group">
-                    {#if a.play_store}
-                      <button
-                        class="small-action"
-                        onclick={() => openInPlayStore(a.package)}
-                        disabled={appActionBusy === a.package}
-                        title="Open {a.name} on the Play Store on the device"
-                      >
-                        Play Store
-                      </button>
-                    {/if}
-                    {#if state !== "missing"}
+                  {#if state !== "missing" || a.play_store}
+                    <div class="menu-wrap">
                       <button
                         class="small-action subtle"
-                        onclick={() => backupApkFor(a.package)}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          appMenuOpen = appMenuOpen === a.package ? null : a.package;
+                        }}
                         disabled={appActionBusy === a.package}
-                        title="Save this app's APK(s) to a folder on this computer"
+                        aria-haspopup="menu"
+                        aria-expanded={appMenuOpen === a.package}
                       >
-                        Backup
+                        {appActionBusy === a.package ? "…" : "Actions ▾"}
                       </button>
-                      <button
-                        class="small-action subtle"
-                        onclick={() => startClone(a.package)}
-                        disabled={appActionBusy === a.package}
-                        title="Install this app onto another connected device (app data does not transfer)"
-                      >
-                        Copy to…
-                      </button>
-                    {:else if !a.play_store}
-                      <span class="muted small">—</span>
-                    {/if}
-                  </div>
+                      {#if appMenuOpen === a.package}
+                        <div class="actions-menu" role="menu">
+                          {#if state === "enabled"}
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; disableApp(a.package); }}
+                              title="pm disable-user --user 0"
+                            >Disable</button>
+                          {:else if state === "disabled"}
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; enableApp(a.package); }}
+                              title="pm enable"
+                            >Enable</button>
+                          {/if}
+                          {#if state !== "missing"}
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; backupApkFor(a.package); }}
+                              title="Save this app's APK(s) to a folder on this computer"
+                            >Backup</button>
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; startClone(a.package); }}
+                              title="Install this app onto another connected device (app data does not transfer)"
+                            >Copy to…</button>
+                          {/if}
+                          {#if a.play_store}
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; openInPlayStore(a.package); }}
+                              title="Open {a.name} on the Play Store on the device"
+                            >Play Store</button>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <span class="muted small">—</span>
+                  {/if}
                 </td>
                 {/snippet}
               </AppRow>
@@ -1910,7 +1924,8 @@
           <h3>Everything else {othersLoading ? "" : `(${visibleOthers.length})`}</h3>
           <p class="muted small">
             Installed apps that aren't in the curated list — sideloaded apps (SmartTube etc.)
-            get the same <strong>Backup</strong> and <strong>Copy to…</strong> tools.
+            get the same <strong>Actions</strong> dropdown: enable/disable, uninstall,
+            APK backup, copy-to-another-device, and cache/data clearing.
             {showSystemOthers ? "Showing system packages too — disable these only if you know what they are." : "System packages are hidden; tick \"Show system packages\" to include them."}
           </p>
           {#if othersLoading}
@@ -1920,7 +1935,7 @@
           {:else}
             <table class="app-table">
               <thead>
-                <tr><th>Package</th><th class="center">Type</th><th class="center">State</th><th class="center">Risk</th><th>Actions</th><th class="center">Tools</th></tr>
+                <tr><th>Package</th><th class="center">Type</th><th class="center">State</th><th class="center">Risk</th><th class="center">Tools</th></tr>
               </thead>
               <tbody>
                 {#each visibleOthers as o (o.package)}
@@ -1956,22 +1971,64 @@
                         onToggleSafe={toggleSafetyOverride}
                       />
                     </td>
-                    <td class="rec-cell">
-                      <div class="tool-group start">
-                        {#if o.enabled}
-                          <button class="small-action subtle" onclick={() => disableOther(o.package)} disabled={appActionBusy === o.package} title="pm disable-user --user 0">Disable</button>
-                          <button class="small-action subtle danger" onclick={() => uninstallOther(o.package)} disabled={appActionBusy === o.package} title="pm uninstall --user 0">Uninstall</button>
-                        {:else}
-                          <button class="small-action subtle" onclick={() => enableOther(o.package)} disabled={appActionBusy === o.package} title="pm enable">Enable</button>
-                        {/if}
-                      </div>
-                    </td>
                     <td class="center tools-cell">
-                      <div class="tool-group">
-                        <button class="small-action subtle" onclick={() => backupApkFor(o.package)} disabled={appActionBusy === o.package} title="Save this app's APK(s) to a folder on this computer">Backup</button>
-                        <button class="small-action subtle" onclick={() => startClone(o.package)} disabled={appActionBusy === o.package} title="Install this app onto another connected device">Copy to…</button>
-                        <button class="small-action subtle" onclick={() => clearCacheFor(o.package)} disabled={appActionBusy === o.package} title="pm clear-cache — drops cached files; safe, rebuilds on next launch">Clear cache</button>
-                        <button class="small-action subtle danger" onclick={() => clearDataFor(o.package)} disabled={appActionBusy === o.package} title="pm clear — wipes accounts, settings, downloads; resets to fresh install (not reversible)">Clear data</button>
+                      <div class="menu-wrap">
+                        <button
+                          class="small-action subtle"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            appMenuOpen = appMenuOpen === o.package ? null : o.package;
+                          }}
+                          disabled={appActionBusy === o.package}
+                          aria-haspopup="menu"
+                          aria-expanded={appMenuOpen === o.package}
+                        >
+                          {appActionBusy === o.package ? "…" : "Actions ▾"}
+                        </button>
+                        {#if appMenuOpen === o.package}
+                          <div class="actions-menu" role="menu">
+                            {#if o.enabled}
+                              <button
+                                role="menuitem"
+                                onclick={() => { appMenuOpen = null; disableOther(o.package); }}
+                                title="pm disable-user --user 0"
+                              >Disable</button>
+                              <button
+                                role="menuitem"
+                                class="danger"
+                                onclick={() => { appMenuOpen = null; uninstallOther(o.package); }}
+                                title="pm uninstall --user 0"
+                              >Uninstall</button>
+                            {:else}
+                              <button
+                                role="menuitem"
+                                onclick={() => { appMenuOpen = null; enableOther(o.package); }}
+                                title="pm enable"
+                              >Enable</button>
+                            {/if}
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; backupApkFor(o.package); }}
+                              title="Save this app's APK(s) to a folder on this computer"
+                            >Backup</button>
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; startClone(o.package); }}
+                              title="Install this app onto another connected device"
+                            >Copy to…</button>
+                            <button
+                              role="menuitem"
+                              onclick={() => { appMenuOpen = null; clearCacheFor(o.package); }}
+                              title="pm clear-cache — drops cached files; safe, rebuilds on next launch"
+                            >Clear cache</button>
+                            <button
+                              role="menuitem"
+                              class="danger"
+                              onclick={() => { appMenuOpen = null; clearDataFor(o.package); }}
+                              title="pm clear — wipes accounts, settings, downloads; resets to fresh install (not reversible)"
+                            >Clear data</button>
+                          </div>
+                        {/if}
                       </div>
                     </td>
                   </tr>
@@ -2346,9 +2403,6 @@
     align-items: center;
     justify-content: flex-end;
   }
-  .tool-group.start {
-    justify-content: flex-start;
-  }
   .small {
     font-size: 0.82rem;
   }
@@ -2514,6 +2568,55 @@
   .small-action.subtle:hover:not(:disabled) {
     background: var(--bg-button);
     color: var(--fg-secondary);
+  }
+  /* Green counterpart to `recommended danger`: a bring-it-back suggestion. */
+  .small-action.rec-enable {
+    background: var(--ok-surface);
+    border-color: var(--ok);
+    color: var(--ok);
+    font-weight: 500;
+  }
+  .small-action.rec-enable:hover:not(:disabled) {
+    background: var(--ok);
+    color: #fff;
+  }
+  .done-check {
+    font-size: 0.9rem;
+    cursor: default;
+  }
+  .menu-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .actions-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.3rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 8rem;
+    z-index: 60;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+    text-align: left;
+  }
+  .actions-menu button {
+    text-align: left;
+    background: transparent;
+    border: none;
+    font-size: 0.82rem;
+    padding: 0.35rem 0.6rem;
+  }
+  .actions-menu button:hover {
+    background: var(--bg-button);
+  }
+  .actions-menu button.danger {
+    color: var(--danger-strong);
   }
   .state-badge {
     display: inline-block;
@@ -2711,6 +2814,8 @@
   }
   .tools-cell {
     white-space: nowrap;
+    /* The Actions dropdown hangs below the row; don't clip it. */
+    overflow: visible;
   }
   .rename-row {
     display: flex;
