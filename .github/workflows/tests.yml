@@ -5,13 +5,13 @@ name: Tests
 
 on:
   push:
-    branches: [main, android-desktop]
+    branches: [main]
     paths:
       - 'Shield-Optimizer.ps1'
       - 'tests/**'
       - '.github/workflows/tests.yml'
   pull_request:
-    branches: [main, android-desktop]
+    branches: [main]
     paths:
       - 'Shield-Optimizer.ps1'
       - 'tests/**'

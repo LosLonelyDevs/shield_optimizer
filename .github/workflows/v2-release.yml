@@ -110,7 +110,7 @@ jobs:
           body+="    - **GUI:** System Settings → Privacy & Security → scroll to the \"Shield Optimizer was blocked\" message → **Open Anyway** → enter password"$'\n'
           body+="- **Windows** (SmartScreen): \"More info\" → \"Run anyway\"."$'\n'
           body+="- **Linux**: \`chmod +x ShieldOptimizer*.AppImage\` before running."$'\n\n'
-          body+="See the [v2 README](https://github.com/${{ github.repository }}/blob/android-desktop/v2/README.md) for setup and feature docs."
+          body+="See the [v2 README](https://github.com/${{ github.repository }}/blob/main/v2/README.md) for setup and feature docs."
 
           # Emit as a multi-line output.
           {
@@ -348,7 +348,7 @@ jobs:
       - name: Checkout default branch
         uses: actions/checkout@v5
         with:
-          ref: android-desktop
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download latest.json from release
@@ -385,7 +385,7 @@ jobs:
             echo "Updater manifest unchanged; nothing to commit."
           else
             git commit -m "Update updater manifest for ${TAG}"
-            git push origin HEAD:android-desktop
+            git push origin HEAD:main
             echo "Updater manifest published for ${TAG}."
           fi
 
@@ -407,7 +407,7 @@ jobs:
       - name: Checkout default branch
         uses: actions/checkout@v5
         with:
-          ref: android-desktop
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
@@ -448,5 +448,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add screenshots/gallery.gif screenshots/gallery-light.gif
           git commit -m "Regenerate gallery GIFs for ${TAG}"
-          git push origin HEAD:android-desktop
+          git push origin HEAD:main
           echo "Galleries refreshed for ${TAG}."
