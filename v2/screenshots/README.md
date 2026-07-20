@@ -18,7 +18,7 @@ That runs two steps:
 
 ## What's captured
 
-Devices list → device Overview → Health → Launcher → App List → Optimize wizard → Tweaks → Remote → Files → Install APK → Snapshot → global Snapshots page.
+Devices list → device Overview (with Snapshots) → Health → App List → Optimize wizard → Tweaks → Display (with Launchers) → Audio → System → Remote → Files → Install APK → ADB Console → global Snapshots page.
 
 The demo data is a faithful Nvidia Shield — real package names, the real launcher catalog, and the real merged app list ([`../src/lib/demo-apps.json`](../src/lib/demo-apps.json), regenerated from `../data/app-lists/`). It is **not** a real device; it's fixtures so the capture is deterministic and hardware-free.
 

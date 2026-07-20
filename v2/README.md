@@ -108,7 +108,7 @@ v2/
 │       ├── +layout.svelte   # app shell, nav, global styles
 │       ├── +layout.ts       # SSR disabled (Tauri SPA mode)
 │       ├── +page.svelte     # device list + Connect IP form
-│       ├── devices/[serial]/+page.svelte  # tabs: Overview / Health / Launcher / Apps / Snapshot
+│       ├── devices/[serial]/+page.svelte  # tabs: Overview (+ Snapshots) / Health / Apps / Display (+ Launchers) / …
 │       └── snapshots/+page.svelte         # global snapshot list
 └── src-tauri/               # Rust backend
     ├── Cargo.toml, build.rs, tauri.conf.json

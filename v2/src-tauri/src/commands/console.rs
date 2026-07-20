@@ -12,6 +12,8 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::activity_log::{self, ActivityEntry};
+
 use super::AppState;
 
 const MAX_CMD_LEN: usize = 2000;
@@ -71,6 +73,14 @@ pub async fn run_shell_impl(
             output: e.to_string(),
         }),
     }
+}
+
+/// `activity_tail` — background-command log entries with id > `after_id`,
+/// oldest first. The Console tab polls this to show what the app is running
+/// behind the scenes.
+#[tauri::command]
+pub async fn activity_tail(after_id: u64) -> Result<Vec<ActivityEntry>, String> {
+    Ok(activity_log::tail(after_id))
 }
 
 #[cfg(test)]

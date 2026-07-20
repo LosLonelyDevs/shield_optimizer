@@ -359,6 +359,18 @@ export interface ConsoleResult {
   output: string;
 }
 
+/// One background-command log entry (Console tab's Activity section).
+export interface ActivityEntry {
+  id: number;
+  /// Milliseconds since the Unix epoch.
+  ts_ms: number;
+  /// "adb" | "scrcpy" — which subsystem ran the command.
+  source: string;
+  command: string;
+  output: string;
+  ok: boolean;
+}
+
 export interface RecordResult {
   ok: boolean;
   message: string;

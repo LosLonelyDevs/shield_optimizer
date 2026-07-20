@@ -255,6 +255,35 @@ function demoFiles(path: string) {
   ];
 }
 
+// Console tab's Background activity section — a representative slice of what
+// the app runs behind the scenes.
+const demoActivity = [
+  {
+    id: 1,
+    ts_ms: Date.parse("2026-06-02T14:40:12Z"),
+    source: "adb",
+    command: `adb -s ${SERIAL} shell "getprop ro.product.model"`,
+    output: "SHIELD Android TV",
+    ok: true,
+  },
+  {
+    id: 2,
+    ts_ms: Date.parse("2026-06-02T14:40:14Z"),
+    source: "adb",
+    command: `adb -s ${SERIAL} shell "dumpsys meminfo -s"`,
+    output: "Total RAM: 2,918,152K (status normal)\nUsed RAM: 1,764,208K\nFree RAM: 1,153,944K",
+    ok: true,
+  },
+  {
+    id: 3,
+    ts_ms: Date.parse("2026-06-02T14:40:31Z"),
+    source: "scrcpy",
+    command: `scrcpy --serial ${SERIAL} --audio-codec=aac`,
+    output: "(launched)",
+    ok: true,
+  },
+];
+
 // Map of command name → handler. Unlisted commands fall through to a benign
 // success so a stray click during capture never throws.
 function handle(cmd: string, args: Record<string, unknown>): unknown {
@@ -404,6 +433,10 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return { ok: true, message: "Wrote advancedsettings.xml.", device_path: "/sdcard/advancedsettings.xml" };
     case "grant_write_secure_settings":
       return { ok: true, message: "Granted WRITE_SECURE_SETTINGS (demo)." };
+    case "activity_tail":
+      // First poll returns the fixture; later polls (afterId advanced) return
+      // nothing so the demo log doesn't duplicate itself.
+      return ((args.afterId as number) ?? 0) > 0 ? [] : demoActivity;
     default:
       // Mutating commands (disable_package, set_default_launcher, …) aren't
       // exercised during capture; answer benignly just in case.

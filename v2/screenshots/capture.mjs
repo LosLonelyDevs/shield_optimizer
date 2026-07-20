@@ -52,21 +52,17 @@ async function captureScreens(page, shot) {
     await page.getByText("NVIDIA SHIELD", { exact: false }).first().waitFor();
     await shot("devices");
 
-    // 2. Device → Overview (default tab).
+    // 2. Device → Overview (default tab; includes the Snapshots section).
     await page.goto(DEVICE_URL, { waitUntil: "networkidle" });
     await page.locator("#tab-overview").waitFor();
     await page.getByRole("heading", { name: "Profile" }).waitFor();
+    await page.getByRole("heading", { name: "Snapshots" }).waitFor();
     await shot("overview");
 
     // 3. Health report.
     await page.locator("#tab-health").click();
     await page.getByText("3840x2160", { exact: false }).first().waitFor();
     await shot("health");
-
-    // 4. Launcher.
-    await page.locator("#tab-launcher").click();
-    await page.getByText("Projectivy Launcher", { exact: false }).first().waitFor();
-    await shot("launcher");
 
     // 5. App list.
     await page.locator("#tab-apps").click();
@@ -86,9 +82,10 @@ async function captureScreens(page, shot) {
     await page.getByText("HDMI", { exact: false }).first().waitFor();
     await shot("tweaks");
 
-    // 7b. Display wizard.
+    // 7b. Display wizard (includes the Launchers section).
     await page.locator("#tab-display").click();
     await page.getByText("Supported Modes", { exact: false }).first().waitFor();
+    await page.getByText("Projectivy Launcher", { exact: false }).first().waitFor();
     await page.waitForTimeout(300);
     await shot("display");
 
@@ -119,14 +116,10 @@ async function captureScreens(page, shot) {
     await page.getByText("Install APK", { exact: false }).first().waitFor();
     await shot("install-apk");
 
-    // 10. Snapshot (per-device).
-    await page.locator("#tab-snapshot").click();
-    await page.waitForTimeout(400);
-    await shot("snapshot");
-
-    // 10b. ADB Console (power-user shell).
+    // 10. ADB Console (power-user shell + background-activity log).
     await page.locator("#tab-console").click();
     await page.getByText("ADB Console", { exact: false }).first().waitFor();
+    await page.getByText("Background activity", { exact: false }).first().waitFor();
     await page.waitForTimeout(300);
     await shot("console");
 

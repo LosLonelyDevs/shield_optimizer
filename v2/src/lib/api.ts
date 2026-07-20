@@ -4,6 +4,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type {
   ActionResult,
+  ActivityEntry,
   AdbStatus,
   AppEntry,
   ApplyResult,
@@ -297,4 +298,8 @@ export const api = {
   // scrcpy mirror window (launched from PATH).
   mirrorScreen: (serial: string) =>
     invoke<ActionResult>("mirror_screen", { serial }),
+
+  // Background-command activity log (Console tab) — entries with id > afterId.
+  activityTail: (afterId: number) =>
+    invoke<ActivityEntry[]>("activity_tail", { afterId }),
 };

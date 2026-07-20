@@ -165,6 +165,7 @@ impl SubprocessAdb {
         }
 
         debug!(adb = ?self.binary, ?args, "adb invoke");
+        let rendered = crate::activity_log::render_command("adb", args);
 
         let mut cmd = Command::new(&self.binary);
         cmd.args(args).kill_on_drop(true);
@@ -175,6 +176,12 @@ impl SubprocessAdb {
             Ok(r) => r?,
             Err(_) => {
                 warn!(?args, "adb timeout");
+                crate::activity_log::record(
+                    "adb",
+                    rendered,
+                    &format!("(timed out after {}s)", dur.as_secs()),
+                    false,
+                );
                 return Err(AdbError::Timeout {
                     seconds: dur.as_secs(),
                 });
@@ -184,6 +191,12 @@ impl SubprocessAdb {
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         let exit_code = output.status.code();
+        crate::activity_log::record(
+            "adb",
+            rendered,
+            &format!("{stdout}\n{stderr}"),
+            output.status.success(),
+        );
 
         // Surface real process failures rather than letting callers parse
         // empty stdout as "no results". Exit-0 with empty stdout is a
@@ -256,15 +269,23 @@ impl AdbDriver for SubprocessAdb {
             }
         };
 
+        let rendered = crate::activity_log::render_command("adb", args);
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
             warn!(?args, code = ?output.status.code(), %stderr, "adb exited nonzero");
+            crate::activity_log::record("adb", rendered, &stderr, false);
             return Err(AdbError::NonZeroExit {
                 code: output.status.code(),
                 stderr,
             });
         }
 
+        crate::activity_log::record(
+            "adb",
+            rendered,
+            &format!("({} bytes of binary output)", output.stdout.len()),
+            true,
+        );
         Ok(output.stdout)
     }
 
@@ -289,7 +310,22 @@ impl AdbDriver for SubprocessAdb {
             .stderr(std::process::Stdio::null());
         super::hide_console_window(&mut cmd);
 
-        cmd.spawn().map_err(AdbError::Io)
+        let rendered = crate::activity_log::render_command("adb", args);
+        match cmd.spawn() {
+            Ok(child) => {
+                crate::activity_log::record(
+                    "adb",
+                    rendered,
+                    "(long-lived process started; output not captured)",
+                    true,
+                );
+                Ok(child)
+            }
+            Err(e) => {
+                crate::activity_log::record("adb", rendered, &e.to_string(), false);
+                Err(AdbError::Io(e))
+            }
+        }
     }
 }
 

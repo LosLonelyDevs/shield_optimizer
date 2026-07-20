@@ -1,12 +1,54 @@
 <script lang="ts">
   import { api } from "$lib/api";
+  import type { ActivityEntry } from "$lib/types";
 
-  let { serial }: { serial: string } = $props();
+  let { serial, active = false }: { serial: string; active?: boolean } = $props();
 
   let command = $state("");
   let output = $state("");
   let ok = $state(true);
   let busy = $state(false);
+
+  // Background activity: incremental tail of every command the app runs
+  // behind the scenes. Polled only while this tab is the active one — the
+  // page keeps visited tabs mounted (hidden), so `active` gates the timer.
+  let entries = $state<ActivityEntry[]>([]);
+  let lastId = 0;
+  let activityBox = $state<HTMLElement | null>(null);
+
+  async function refreshActivity() {
+    try {
+      const fresh = await api.activityTail(lastId);
+      if (fresh.length > 0) {
+        lastId = fresh[fresh.length - 1].id;
+        entries = [...entries, ...fresh].slice(-500);
+      }
+    } catch {
+      // Backend unavailable mid-poll — retry on the next tick.
+    }
+  }
+
+  function clearActivity() {
+    // Client-side only: lastId stays, so cleared entries don't reappear.
+    entries = [];
+  }
+
+  $effect(() => {
+    if (!active) return;
+    refreshActivity();
+    const timer = setInterval(refreshActivity, 1500);
+    return () => clearInterval(timer);
+  });
+
+  // Keep the log pinned to the newest entry as it grows.
+  $effect(() => {
+    entries;
+    if (activityBox) activityBox.scrollTop = activityBox.scrollHeight;
+  });
+
+  function fmtTime(tsMs: number): string {
+    return new Date(tsMs).toLocaleTimeString();
+  }
 
   const BOOKMARK_KEY = "shieldopt.consoleBookmarks";
   // A few safe, useful starting points so the console isn't a blank box.
@@ -112,6 +154,38 @@
         <li>
           <button class="bm-run mono" onclick={() => useBookmark(b)} title="Run this command">{b}</button>
           <button class="bm-del" onclick={() => removeBookmark(b)} title="Remove bookmark" aria-label="Remove bookmark">✕</button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+
+<div class="card activity-card">
+  <div class="card-header">
+    <h2>Background activity</h2>
+    <button class="small-action subtle" disabled={entries.length === 0} onclick={clearActivity}>
+      Clear
+    </button>
+  </div>
+  <p class="muted small activity-hint">
+    Every command the app runs behind the scenes — adb calls, scrcpy launches —
+    with its output. If something fails silently (like a mirror window that
+    never appears), the reason lands here.
+  </p>
+  {#if entries.length === 0}
+    <p class="muted small">Nothing yet. Actions you take will log their commands here.</p>
+  {:else}
+    <ul class="activity" bind:this={activityBox}>
+      {#each entries as e (e.id)}
+        <li class:bad={!e.ok}>
+          <div class="act-head">
+            <span class="act-time mono">{fmtTime(e.ts_ms)}</span>
+            <span class="act-src" class:bad={!e.ok}>{e.source}</span>
+            <span class="act-cmd mono">{e.command}</span>
+          </div>
+          {#if e.output}
+            <pre class="act-out">{e.output}</pre>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -236,5 +310,71 @@
     border-radius: 4px;
     font-family: ui-monospace, monospace;
     font-size: 0.85em;
+  }
+  .activity-card {
+    margin-top: 1rem;
+  }
+  .activity-hint {
+    margin: 0 0 0.6rem;
+  }
+  .activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 420px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .activity li {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.45rem 0.6rem;
+    background: var(--bg-inset);
+  }
+  .activity li.bad {
+    border-color: var(--danger-text);
+  }
+  .act-head {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .act-time {
+    color: var(--fg-secondary);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  .act-src {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 0.35rem;
+  }
+  .act-src.bad {
+    color: var(--danger-text);
+    border-color: var(--danger-text);
+  }
+  .act-cmd {
+    font-size: 0.8rem;
+    word-break: break-all;
+  }
+  .act-out {
+    margin: 0.35rem 0 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.76rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow: auto;
+    color: var(--fg-secondary);
+  }
+  .activity li.bad .act-out {
+    color: var(--danger-text);
   }
 </style>

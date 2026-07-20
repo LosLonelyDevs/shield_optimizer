@@ -38,7 +38,7 @@
 
   let serial = $derived(decodeURIComponent($page.params.serial ?? ""));
 
-  type Tab = "overview" | "health" | "launcher" | "apps" | "optimize" | "tweaks" | "display" | "audio" | "system" | "remote" | "files" | "snapshot" | "sideload" | "console";
+  type Tab = "overview" | "health" | "apps" | "optimize" | "tweaks" | "display" | "audio" | "system" | "remote" | "files" | "sideload" | "console";
   let activeTab = $state<Tab>("overview");
 
   let device = $state<Device | null>(null);
@@ -1174,9 +1174,10 @@
       // Preload catalog so the memory table can show risk tiers.
       if (!appsLoaded && !appsLoading) loadApps();
     }
-    if (activeTab === "launcher" && !launchersLoaded && !launcherLoading) loadLauncher();
+    // Launchers live as a section in the Display tab; snapshots in Overview.
+    if (activeTab === "display" && !launchersLoaded && !launcherLoading) loadLauncher();
     if (activeTab === "apps" && !appsLoaded && !appsLoading) loadApps();
-    if (activeTab === "snapshot" && !snapshotsLoaded) loadSnapshots();
+    if (activeTab === "overview" && !snapshotsLoaded) loadSnapshots();
   });
 
   // A device-state change (enable/disable/uninstall/launcher switch) in one tab
@@ -1186,7 +1187,7 @@
   // on refreshes itself inline. Existing data stays on screen until each reload
   // finishes, so there's no flash of empty state.
   function invalidateDeviceCaches() {
-    if (activeTab !== "launcher") launchersLoaded = false;
+    if (activeTab !== "display") launchersLoaded = false;
     if (activeTab !== "health") healthStale = true;
   }
 
@@ -1336,7 +1337,6 @@
           {mirrorBusy ? "Opening…" : "Mirror"}
         </button>
         <button
-          class="small-action subtle"
           onclick={disconnectAndLeave}
           disabled={disconnectBusy}
           title="Drop the ADB connection to this device. Useful for network devices you don't want auto-reconnecting on Refresh."
@@ -1373,7 +1373,6 @@
     {#each [
       { id: "overview", label: "Overview" },
       { id: "health", label: "Health" },
-      { id: "launcher", label: "Launcher" },
       { id: "apps", label: "App List" },
       { id: "optimize", label: "Optimize" },
       { id: "tweaks", label: "Tweaks" },
@@ -1383,7 +1382,6 @@
       { id: "remote", label: "Remote" },
       { id: "files", label: "Files" },
       { id: "sideload", label: "Install APK" },
-      { id: "snapshot", label: "Snapshot" },
       { id: "console", label: "Console" },
     ] as t (t.id)}
       <button
@@ -1449,6 +1447,99 @@
           </div>
         {/if}
       </div>
+    </div>
+
+    <div class="card section-card">
+      <div class="card-header">
+        <h2>Snapshots</h2>
+        <button class="primary" onclick={saveSnapshot} disabled={saveBusy}>
+          {saveBusy ? "Saving…" : "Save current state"}
+        </button>
+      </div>
+      {#if saveResult}<p class="muted small">{saveResult}</p>{/if}
+      {#if snapshotsErr}<div class="error">{snapshotsErr}</div>{/if}
+      {#if snapshots.length === 0}
+        <p class="muted">No snapshots yet. Use the button above to save one.</p>
+      {:else}
+        <ul class="snap-list">
+          {#each snapshots as s (s.path)}
+            <li>
+              <div class="snap-main">
+                <div class="snap-title">
+                  <strong>{s.label ?? s.device_name}</strong>
+                  <span class="tag installed">{deviceTypeLabel(s.device_type).toUpperCase()}</span>
+                  {#if s.label}<span class="muted small">{s.device_name}</span>{/if}
+                </div>
+                <div class="muted small">
+                  {snapTimestamp(s.saved_at)} ·
+                  {s.disabled_count} disabled,
+                  {s.settings_count} settings,
+                  launcher {s.launcher ?? "—"}
+                </div>
+              </div>
+              <div class="snap-actions">
+                <button class="small-action" onclick={() => previewSnapshot(s.path)}>Preview apply</button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if previewBusy}
+        <p class="muted">Computing plan…</p>
+      {:else if previewErr}
+        <div class="error">{previewErr}</div>
+      {:else if preview && previewPath}
+        <div class="preview-box">
+          <h3>Plan preview</h3>
+          {#if preview.cross_device_warning}
+            <div class="warning">{preview.cross_device_warning}</div>
+          {/if}
+          <ul>
+            <li><strong>{preview.packages_to_disable.length}</strong> packages will be disabled</li>
+            <li><strong>{preview.packages_already_disabled.length}</strong> already disabled (no-op)</li>
+            <li><strong>{preview.packages_not_installed.length}</strong> not present on device</li>
+            <li>Launcher: <code>{preview.launcher_to_set ?? "(unchanged)"}</code></li>
+            <li><strong>{Object.keys(preview.settings_to_write).length}</strong> settings will be written
+              {#if preview.settings_already_set.length > 0}
+                <span class="muted">({preview.settings_already_set.length} already set, no-op)</span>
+              {/if}
+            </li>
+          </ul>
+          <div class="apply-row">
+            <button
+              class="primary"
+              onclick={applySnapshot}
+              disabled={applyBusy || applyResult !== null}
+            >
+              {applyBusy ? "Applying…" : applyResult ? "Applied" : "Apply this snapshot"}
+            </button>
+            <span class="muted small">
+              Disable is reversible via Emergency Recovery above.
+            </span>
+          </div>
+          {#if applyErr}
+            <div class="error">{applyErr}</div>
+          {/if}
+          {#if applyResult}
+            <div class="apply-result">
+              <p><strong>{applyResult.summary}</strong></p>
+              <ul>
+                <li><strong>{applyResult.packages_disabled.length}</strong> packages disabled</li>
+                {#if applyResult.packages_failed.length > 0}
+                  <li class="warn-text"><strong>{applyResult.packages_failed.length}</strong> failed: {applyResult.packages_failed.join(", ")}</li>
+                {/if}
+                {#if applyResult.launcher_message}
+                  <li>Launcher: {applyResult.launcher_message}</li>
+                {/if}
+                <li><strong>{applyResult.settings_written.length}</strong> settings written</li>
+                {#if applyResult.settings_failed.length > 0}
+                  <li class="warn-text">Settings failed: {applyResult.settings_failed.join("; ")}</li>
+                {/if}
+              </ul>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   {:else if activeTab === "health"}
     <div class="card" role="tabpanel" tabindex={0} id="tabpanel-health" aria-labelledby="tab-health">
@@ -1674,121 +1765,6 @@
               {appActionMessage}
               <button class="dismiss" onclick={() => (appActionMessage = "")} title="Dismiss">✕</button>
             </p>
-          {/if}
-        {/if}
-      {/if}
-    </div>
-  {:else if activeTab === "launcher"}
-    <div class="card" role="tabpanel" tabindex={0} id="tabpanel-launcher" aria-labelledby="tab-launcher">
-      <div class="card-header">
-        <h2>Launchers</h2>
-        <button onclick={loadLauncher} disabled={launcherLoading}>
-          {launcherLoading ? "Loading…" : "Refresh"}
-        </button>
-      </div>
-      {#if launcherErr}
-        <div class="error">{launcherErr}</div>
-      {:else}
-        {#if currentLauncher?.package}
-          <p>Currently active: <strong>{currentLauncher.package}</strong></p>
-        {/if}
-        {#if channelDisabled}
-          <div class="warning">
-            ⚠ <code>com.android.providers.tv</code> is disabled on this device. Watch Next / Continue
-            Watching rows from Apple TV, Netflix, Disney+ etc. will be empty until you re-enable it.
-          </div>
-        {/if}
-        {#if launchers.length === 0 && !launcherLoading}
-          <p class="muted">No launchers loaded.</p>
-        {:else}
-          <ul class="launcher-list">
-            {#each launchers as l}
-              {@const isCurrent = currentLauncher?.package === l.entry.package}
-              {@const busy = launcherActionBusy === l.entry.package}
-              <li>
-                <div>
-                  <div class="launcher-name">
-                    {l.entry.name}
-                    {#if isCurrent}
-                      <span class="tag installed">ACTIVE</span>
-                    {/if}
-                  </div>
-                  <div class="muted small mono">{l.entry.package}</div>
-                  {#if busy && launcherProgress}
-                    <div class="launcher-progress" role="status" aria-live="polite">
-                      <span class="spinner" aria-hidden="true"></span>{launcherProgress}…
-                    </div>
-                  {/if}
-                </div>
-                <div class="row-actions">
-                  <div class="tags">
-                    {#if l.stock}
-                      <span class="tag stock">STOCK</span>
-                    {:else if l.other}
-                      <span class="tag stock">HOME APP</span>
-                    {:else if l.installed}
-                      <span class="tag installed">INSTALLED</span>
-                    {:else}
-                      <span class="tag missing">MISSING</span>
-                    {/if}
-                    {#if l.installed && !l.enabled}
-                      <span class="tag disabled">DISABLED</span>
-                    {/if}
-                  </div>
-                  {#if !l.installed}
-                    <button
-                      class="small-action"
-                      onclick={() => installLauncherFromStore(l.entry.package)}
-                      disabled={launcherActionBusy !== null}
-                      title="Open the Play Store on the device to install {l.entry.name}"
-                    >
-                      {busy ? "Opening…" : "Install"}
-                    </button>
-                  {:else}
-                    {#if !l.enabled}
-                      <button
-                        class="small-action"
-                        onclick={() => enableLauncher(l.entry.package)}
-                        disabled={launcherActionBusy !== null}
-                        title="pm enable {l.entry.package}"
-                      >
-                        {busy ? "Enabling…" : "Enable"}
-                      </button>
-                    {/if}
-                    {#if !isCurrent}
-                      <button
-                        class="primary small-action"
-                        onclick={() => setDefaultLauncher(l.entry.package)}
-                        disabled={launcherActionBusy !== null}
-                        title={l.enabled
-                          ? "Make this the default launcher (role API / set-home-activity)"
-                          : "Enable this launcher, then make it the default"}
-                      >
-                        {busy ? "Setting…" : l.enabled ? "Set as default" : "Enable & set default"}
-                      </button>
-                    {/if}
-                    {#if !isCurrent && l.enabled}
-                      <button
-                        class="small-action subtle"
-                        onclick={() => disableLauncher(l.entry.package)}
-                        disabled={launcherActionBusy !== null}
-                        title="pm disable-user --user 0 {l.entry.package}"
-                      >{busy ? "Disabling…" : "Disable"}</button>
-                    {:else if isCurrent}
-                      <span
-                        class="muted small"
-                        title="Disabling the launcher you're currently using would leave the TV with no Home screen"
-                      >
-                        Set another launcher as default to disable this one
-                      </span>
-                    {/if}
-                  {/if}
-                </div>
-              </li>
-            {/each}
-          </ul>
-          {#if launcherActionMessage}
-            <p class="muted small mono action-message">{launcherActionMessage}</p>
           {/if}
         {/if}
       {/if}
@@ -2030,99 +2006,6 @@
         </div>
       {/if}
     </div>
-  {:else if activeTab === "snapshot"}
-    <div class="card" role="tabpanel" tabindex={0} id="tabpanel-snapshot" aria-labelledby="tab-snapshot">
-      <div class="card-header">
-        <h2>Snapshots</h2>
-        <button class="primary" onclick={saveSnapshot} disabled={saveBusy}>
-          {saveBusy ? "Saving…" : "Save current state"}
-        </button>
-      </div>
-      {#if saveResult}<p class="muted small">{saveResult}</p>{/if}
-      {#if snapshotsErr}<div class="error">{snapshotsErr}</div>{/if}
-      {#if snapshots.length === 0}
-        <p class="muted">No snapshots yet. Use the button above to save one.</p>
-      {:else}
-        <ul class="snap-list">
-          {#each snapshots as s (s.path)}
-            <li>
-              <div class="snap-main">
-                <div class="snap-title">
-                  <strong>{s.label ?? s.device_name}</strong>
-                  <span class="tag installed">{deviceTypeLabel(s.device_type).toUpperCase()}</span>
-                  {#if s.label}<span class="muted small">{s.device_name}</span>{/if}
-                </div>
-                <div class="muted small">
-                  {snapTimestamp(s.saved_at)} ·
-                  {s.disabled_count} disabled,
-                  {s.settings_count} settings,
-                  launcher {s.launcher ?? "—"}
-                </div>
-              </div>
-              <div class="snap-actions">
-                <button class="small-action" onclick={() => previewSnapshot(s.path)}>Preview apply</button>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      {#if previewBusy}
-        <p class="muted">Computing plan…</p>
-      {:else if previewErr}
-        <div class="error">{previewErr}</div>
-      {:else if preview && previewPath}
-        <div class="preview-box">
-          <h3>Plan preview</h3>
-          {#if preview.cross_device_warning}
-            <div class="warning">{preview.cross_device_warning}</div>
-          {/if}
-          <ul>
-            <li><strong>{preview.packages_to_disable.length}</strong> packages will be disabled</li>
-            <li><strong>{preview.packages_already_disabled.length}</strong> already disabled (no-op)</li>
-            <li><strong>{preview.packages_not_installed.length}</strong> not present on device</li>
-            <li>Launcher: <code>{preview.launcher_to_set ?? "(unchanged)"}</code></li>
-            <li><strong>{Object.keys(preview.settings_to_write).length}</strong> settings will be written
-              {#if preview.settings_already_set.length > 0}
-                <span class="muted">({preview.settings_already_set.length} already set, no-op)</span>
-              {/if}
-            </li>
-          </ul>
-          <div class="apply-row">
-            <button
-              class="primary"
-              onclick={applySnapshot}
-              disabled={applyBusy || applyResult !== null}
-            >
-              {applyBusy ? "Applying…" : applyResult ? "Applied" : "Apply this snapshot"}
-            </button>
-            <span class="muted small">
-              Disable is reversible via Emergency Recovery on the Overview tab.
-            </span>
-          </div>
-          {#if applyErr}
-            <div class="error">{applyErr}</div>
-          {/if}
-          {#if applyResult}
-            <div class="apply-result">
-              <p><strong>{applyResult.summary}</strong></p>
-              <ul>
-                <li><strong>{applyResult.packages_disabled.length}</strong> packages disabled</li>
-                {#if applyResult.packages_failed.length > 0}
-                  <li class="warn-text"><strong>{applyResult.packages_failed.length}</strong> failed: {applyResult.packages_failed.join(", ")}</li>
-                {/if}
-                {#if applyResult.launcher_message}
-                  <li>Launcher: {applyResult.launcher_message}</li>
-                {/if}
-                <li><strong>{applyResult.settings_written.length}</strong> settings written</li>
-                {#if applyResult.settings_failed.length > 0}
-                  <li class="warn-text">Settings failed: {applyResult.settings_failed.join("; ")}</li>
-                {/if}
-              </ul>
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
   {/if}
 
   <!-- Extracted tabs: mount once on first visit, then toggle visibility so
@@ -2135,6 +2018,121 @@
   {#if visited.display}
     <div hidden={activeTab !== "display"}>
       <DisplayTab {serial} deviceType={device.device_type} />
+
+      <div class="card section-card">
+        <div class="card-header">
+          <h2>Launchers</h2>
+          <button onclick={loadLauncher} disabled={launcherLoading}>
+            {launcherLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        {#if launcherErr}
+          <div class="error">{launcherErr}</div>
+        {:else}
+          {#if currentLauncher?.package}
+            <p>Currently active: <strong>{currentLauncher.package}</strong></p>
+          {/if}
+          {#if channelDisabled}
+            <div class="warning">
+              ⚠ <code>com.android.providers.tv</code> is disabled on this device. Watch Next / Continue
+              Watching rows from Apple TV, Netflix, Disney+ etc. will be empty until you re-enable it.
+            </div>
+          {/if}
+          {#if launchers.length === 0 && !launcherLoading}
+            <p class="muted">No launchers loaded.</p>
+          {:else}
+            <ul class="launcher-list">
+              {#each launchers as l}
+                {@const isCurrent = currentLauncher?.package === l.entry.package}
+                {@const busy = launcherActionBusy === l.entry.package}
+                <li>
+                  <div>
+                    <div class="launcher-name">
+                      {l.entry.name}
+                      {#if isCurrent}
+                        <span class="tag installed">ACTIVE</span>
+                      {/if}
+                    </div>
+                    <div class="muted small mono">{l.entry.package}</div>
+                    {#if busy && launcherProgress}
+                      <div class="launcher-progress" role="status" aria-live="polite">
+                        <span class="spinner" aria-hidden="true"></span>{launcherProgress}…
+                      </div>
+                    {/if}
+                  </div>
+                  <div class="row-actions">
+                    <div class="tags">
+                      {#if l.stock}
+                        <span class="tag stock">STOCK</span>
+                      {:else if l.other}
+                        <span class="tag stock">HOME APP</span>
+                      {:else if l.installed}
+                        <span class="tag installed">INSTALLED</span>
+                      {:else}
+                        <span class="tag missing">MISSING</span>
+                      {/if}
+                      {#if l.installed && !l.enabled}
+                        <span class="tag disabled">DISABLED</span>
+                      {/if}
+                    </div>
+                    {#if !l.installed}
+                      <button
+                        class="small-action"
+                        onclick={() => installLauncherFromStore(l.entry.package)}
+                        disabled={launcherActionBusy !== null}
+                        title="Open the Play Store on the device to install {l.entry.name}"
+                      >
+                        {busy ? "Opening…" : "Install"}
+                      </button>
+                    {:else}
+                      {#if !l.enabled}
+                        <button
+                          class="small-action"
+                          onclick={() => enableLauncher(l.entry.package)}
+                          disabled={launcherActionBusy !== null}
+                          title="pm enable {l.entry.package}"
+                        >
+                          {busy ? "Enabling…" : "Enable"}
+                        </button>
+                      {/if}
+                      {#if !isCurrent}
+                        <button
+                          class="primary small-action"
+                          onclick={() => setDefaultLauncher(l.entry.package)}
+                          disabled={launcherActionBusy !== null}
+                          title={l.enabled
+                            ? "Make this the default launcher (role API / set-home-activity)"
+                            : "Enable this launcher, then make it the default"}
+                        >
+                          {busy ? "Setting…" : l.enabled ? "Set as default" : "Enable & set default"}
+                        </button>
+                      {/if}
+                      {#if !isCurrent && l.enabled}
+                        <button
+                          class="small-action subtle"
+                          onclick={() => disableLauncher(l.entry.package)}
+                          disabled={launcherActionBusy !== null}
+                          title="pm disable-user --user 0 {l.entry.package}"
+                        >{busy ? "Disabling…" : "Disable"}</button>
+                      {:else if isCurrent}
+                        <span
+                          class="muted small"
+                          title="Disabling the launcher you're currently using would leave the TV with no Home screen"
+                        >
+                          Set another launcher as default to disable this one
+                        </span>
+                      {/if}
+                    {/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            {#if launcherActionMessage}
+              <p class="muted small mono action-message">{launcherActionMessage}</p>
+            {/if}
+          {/if}
+        {/if}
+      </div>
     </div>
   {/if}
   {#if visited.audio}
@@ -2149,7 +2147,7 @@
   {/if}
   {#if visited.console}
     <div hidden={activeTab !== "console"}>
-      <ConsoleTab {serial} />
+      <ConsoleTab {serial} active={activeTab === "console"} />
     </div>
   {/if}
   {#if visited.files}
@@ -2217,7 +2215,14 @@
   }
   .tabs {
     display: flex;
-    gap: 0.4rem;
+    /* One single row at any window size: labels never wrap, gap and per-tab
+       padding/font scale down with the viewport, and below the point where
+       even the compact sizing can't fit, the bar scrolls horizontally rather
+       than spilling into a second row. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    gap: clamp(0.1rem, 0.35vw, 0.4rem);
     margin-bottom: 1rem;
     border-bottom: 1px solid var(--border);
     padding-bottom: 0;
@@ -2227,7 +2232,10 @@
     border-bottom: 2px solid transparent;
     border-radius: 0;
     background: transparent;
-    padding: 0.5rem 0.8rem;
+    padding: 0.5rem clamp(0.3rem, 0.85vw, 0.8rem);
+    font-size: clamp(0.74rem, 1vw, 0.9rem);
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
   .tabs button.active {
     color: var(--accent);
@@ -2238,6 +2246,10 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.2rem;
+  }
+  /* A former tab now living as a second card inside another tab. */
+  .section-card {
+    margin-top: 1rem;
   }
   .card h2 {
     margin: 0 0 0.8rem;

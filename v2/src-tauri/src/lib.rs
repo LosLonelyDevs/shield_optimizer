@@ -5,6 +5,7 @@
 //! - `adb/`    — subprocess wrapper + output parsers.
 //! - `commands/` — Tauri command handlers and shared state.
 
+pub mod activity_log;
 pub mod adb;
 pub mod commands;
 pub mod engine;
@@ -154,6 +155,7 @@ pub fn run() {
             system::repair_ntp,
             system::compile_speed_profile,
             console::run_shell,
+            console::activity_tail,
             recording::start_recording,
             recording::stop_recording,
             quick_install::list_quick_apps,
