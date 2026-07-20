@@ -10,6 +10,8 @@ jobs:
   build:
     name: Build on ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -102,3 +104,56 @@ jobs:
           prerelease: ${{ steps.release.outputs.prerelease }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # Same as merge-updater in v2-release.yml: commit the merged latest.json that
+  # tauri-action uploaded to the release, so the raw.githubusercontent endpoint
+  # in tauri.conf.json resolves to this release.
+  merge-updater:
+    needs: build
+    name: Publish updater manifest
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download latest.json from release
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p v2/updater
+
+          # tauri-action may take a moment to finalize the asset; retry a few times.
+          for attempt in 1 2 3 4 5; do
+            if gh release download "$TAG" --pattern 'latest.json' --dir /tmp --clobber; then
+              break
+            fi
+            echo "  attempt $attempt: latest.json not ready, retrying in 15s…"
+            sleep 15
+          done
+          [[ -f /tmp/latest.json ]] || { echo "latest.json not found on release $TAG"; exit 1; }
+
+          cp /tmp/latest.json v2/updater/latest.json
+          echo "Updater manifest for $TAG:"
+          cat v2/updater/latest.json
+
+      - name: Commit updater manifest
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v2/updater/latest.json
+          if git diff --cached --quiet; then
+            echo "Updater manifest unchanged; nothing to commit."
+          else
+            git commit -m "Update updater manifest for ${TAG}"
+            git push origin HEAD:main
+            echo "Updater manifest published for ${TAG}."
+          fi

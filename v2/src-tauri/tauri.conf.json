@@ -25,7 +25,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcxMTFEMjVENTI5OEM3QjEKUldTeHg1aFNYZElSY1k0c3B2VmN0SlM1SUw5ZWdoWkVWeXVvR3RmRkNnNDNrWm1NanhOcTNOUjAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDQTA5QTI1MEQ0NDkxNkIKUldScmtVUU5KWnFnN0g2RHZuRnYwOG8wTkhKMTJsbVAra2JqbEh5M3dVNlByTjJIUGtvSFdGTkIK",
       "endpoints": [
         "https://raw.githubusercontent.com/LosLonelyDevs/shield_optimizer/main/v2/updater/latest.json"
       ]
