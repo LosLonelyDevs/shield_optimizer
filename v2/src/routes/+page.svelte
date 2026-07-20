@@ -61,10 +61,52 @@
       }
       adbMissing = false;
       devices = await api.listDevices();
+      rememberNetworkDevices();
+      // Detached: reconnect attempts must never delay the list paint.
+      void reviveMissingNetworkDevices();
     } catch (e) {
       error = String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  // The adb daemon forgets a network device the moment its TCP session dies
+  // (TV sleeps, Wi-Fi power save, router idle timeout) — the Shield just
+  // vanishes from `adb devices` and nothing ever reconnects it. Remember the
+  // network serials we've seen connected and quietly `adb connect` any that
+  // have gone missing on each refresh.
+  const RECENT_NETWORK_KEY = "shieldopt.recentNetworkDevices";
+
+  function rememberNetworkDevices() {
+    const connected = devices
+      .filter((d) => d.connection === "network" && d.status === "device")
+      .map((d) => d.serial);
+    if (connected.length === 0) return;
+    let prev: string[] = [];
+    try {
+      prev = JSON.parse(localStorage.getItem(RECENT_NETWORK_KEY) ?? "[]");
+    } catch {
+      // Corrupt entry — rebuild from what's connected now.
+    }
+    const merged = [...new Set([...connected, ...prev])].slice(0, 8);
+    localStorage.setItem(RECENT_NETWORK_KEY, JSON.stringify(merged));
+  }
+
+  async function reviveMissingNetworkDevices() {
+    let known: string[] = [];
+    try {
+      known = JSON.parse(localStorage.getItem(RECENT_NETWORK_KEY) ?? "[]");
+    } catch {
+      return;
+    }
+    const present = new Set(devices.map((d) => d.serial));
+    const missing = known.filter((s) => !present.has(s));
+    if (missing.length === 0) return;
+    const results = await Promise.allSettled(missing.map((s) => api.connectDevice(s)));
+    if (results.some((r) => r.status === "fulfilled" && r.value.ok)) {
+      devices = await api.listDevices();
+      rememberNetworkDevices();
     }
   }
 

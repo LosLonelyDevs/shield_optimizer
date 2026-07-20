@@ -384,6 +384,8 @@ export interface QuickApp {
   source: string;
   repo: string | null;
   asset_match: string | null;
+  /// Pinned release tag (prerelease-only builds); null = latest.
+  tag: string | null;
   fallback_url: string | null;
 }
 

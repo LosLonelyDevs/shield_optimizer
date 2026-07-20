@@ -17,6 +17,32 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## v2-2.2.3
+
+- **Risk badges explain themselves.** Every Risk pill in the Health Report and
+  App List — including UNKNOWN, and the "Everything else" table, which now has
+  a Risk column of its own — shows a hovercard on hover: what the rating means
+  and how it was decided (curated catalog tier, caution list, protected system
+  list, or none of the above → UNKNOWN).
+- **Mark as safe, per device.** The hovercard has a button to mark any
+  non-protected app safe, softening its badge and disable confirms. Marks are
+  stored against the device's stable identity (Android ID), not its adb
+  serial, so the same device keeps its marks across reconnects and DHCP
+  address changes. Protected (never-disable) system packages still refuse the
+  override. Marks saved by the old global format are migrated.
+- **Cleaner tables.** State and Risk render as consistent pills, numeric
+  columns right-align under right-aligned headers, and each row's actions sit
+  in a tidy cluster instead of wrapping raggedly.
+- **Install APK, reorganized.** Shizuku now has its own card above a single
+  Quick install section, and the "Popular sideloads" link list is gone.
+  Catalog: removed SmartTube, Obtainium, and AdGuard for Android TV; added
+  TizenTube Cobalt, Flicky, MATVT, and ObtainX. Quick-install entries can now
+  pin a GitHub release tag — needed for MATVT's v1.0.7-pre, since
+  `releases/latest` never returns prereleases.
+- **Background activity log.** The Console tab tails every adb / scrcpy
+  subprocess the app runs behind the scenes, with output — see why a mirror
+  window died without attaching a debugger. Also fixes the Shizuku installer.
+
 ## v2-2.2.2
 
 - **Keep after reboot.** Android resets `background_process_limit` to Standard

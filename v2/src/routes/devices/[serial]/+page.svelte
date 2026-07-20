@@ -25,6 +25,7 @@
   import RamBadge from "$lib/components/RamBadge.svelte";
   import UsageBadge from "$lib/components/UsageBadge.svelte";
   import StateBadge from "$lib/components/StateBadge.svelte";
+  import RiskBadge from "$lib/components/RiskBadge.svelte";
   import AppRow from "$lib/components/AppRow.svelte";
   import FilesTab from "$lib/components/FilesTab.svelte";
   import TweaksTab from "$lib/components/TweaksTab.svelte";
@@ -55,14 +56,23 @@
   let liveRefresh = $state(false);
   let liveRefreshTimer: ReturnType<typeof setInterval> | null = null;
   const LIVE_REFRESH_INTERVAL_MS = 3000;
+  // Keepalive: the adb daemon silently drops an idle TCP device (Shield
+  // network standby, Wi-Fi power save, router idle timers) and never
+  // reconnects on its own. A cheap ping keeps the session warm while this
+  // page is open — and because the driver reconnects-and-retries on a lost
+  // transport, the same ping re-registers the device the moment it's
+  // reachable again after a sleep.
+  const KEEPALIVE_INTERVAL_MS = 45_000;
+  let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   /// Cached safety classifications for the visible memory-table rows. Populated
   /// in batch whenever the health report refreshes so each row knows whether
   /// the Disable button should be hard-blocked.
   let safetyMap = $state<Record<string, Safety>>({});
-  /// Packages the user has manually declared safe (global, persisted via
-  /// `safety-overrides.json`). Layered over `safetyMap` so a Caution / curated
-  /// risk badge the user has decided they understand stops shouting. Never
-  /// includes NEVER_DISABLE packages — the backend refuses to add them.
+  /// Packages the user has manually declared safe on THIS device (persisted
+  /// per device identity in `safety-overrides.json`). Layered over `safetyMap`
+  /// so a Caution / curated risk badge the user has decided they understand
+  /// stops shouting. Never includes NEVER_DISABLE packages — the backend
+  /// refuses to add them.
   let safetyOverrides = $state<Record<string, boolean>>({});
   let overrideBusy = $state<string | null>(null);
 
@@ -232,20 +242,9 @@
     try {
       report = await api.healthReport(serial);
       reportLastRefreshed = new Date();
-      // Resolve safety for every visible row in parallel — single ms each,
-      // pure lookup against the engine const list. Cached so re-renders
-      // don't re-query.
-      const pkgs = report.top_memory.map((m) => m.package);
-      const results = await Promise.all(
-        pkgs.map((p) =>
-          safetyMap[p]
-            ? Promise.resolve(safetyMap[p])
-            : api.safetyInfo(p).catch(() => ({ kind: "safe" } as Safety)),
-        ),
-      );
-      const next = { ...safetyMap };
-      results.forEach((s, i) => (next[pkgs[i]] = s));
-      safetyMap = next;
+      // Resolve safety for every visible row so each one knows whether its
+      // Disable button is hard-blocked and what its risk badge should say.
+      await cacheSafety(report.top_memory.map((m) => m.package));
     } catch (e) {
       reportErr = String(e);
     } finally {
@@ -253,12 +252,13 @@
     }
   }
 
-  /// Load the user's manual "safe" declarations once. Global (not per-device),
-  /// so it's loaded on mount and left intact across device switches. Best-effort
-  /// — a failure just means no overrides are applied.
+  /// Load the user's manual "safe" declarations for THIS device. The backend
+  /// keys them by the device's stable identity (Android ID), so the same
+  /// physical device keeps its marks across reconnects and IP changes.
+  /// Best-effort — a failure just means no overrides are applied.
   async function loadSafetyOverrides() {
     try {
-      const list = await api.listSafetyOverrides();
+      const list = await api.listSafetyOverrides(serial);
       const map: Record<string, boolean> = {};
       for (const p of list) map[p] = true;
       safetyOverrides = map;
@@ -268,13 +268,13 @@
   }
 
   /// Toggle a package's manual "safe" declaration from its risk hovercard. The
-  /// backend returns the full updated list (and rejects NEVER_DISABLE packages),
-  /// so we just replace our local copy from its response.
+  /// backend returns the device's full updated list (and rejects NEVER_DISABLE
+  /// packages), so we just replace our local copy from its response.
   async function toggleSafetyOverride(pkg: string) {
     const currentlySafe = !!safetyOverrides[pkg];
     overrideBusy = pkg;
     try {
-      const list = await api.setSafetyOverride(pkg, !currentlySafe);
+      const list = await api.setSafetyOverride(serial, pkg, !currentlySafe);
       const map: Record<string, boolean> = {};
       for (const p of list) map[p] = true;
       safetyOverrides = map;
@@ -283,6 +283,20 @@
     } finally {
       overrideBusy = null;
     }
+  }
+
+  /// Batch-resolve engine safety classifications into `safetyMap` for any
+  /// packages not already cached. Pure const-list lookups on the backend —
+  /// cheap enough to fire for whole tables.
+  async function cacheSafety(pkgs: string[]) {
+    const missing = pkgs.filter((p) => !safetyMap[p]);
+    if (missing.length === 0) return;
+    const results = await Promise.all(
+      missing.map((p) => api.safetyInfo(p).catch(() => ({ kind: "safe" }) as Safety)),
+    );
+    const next = { ...safetyMap };
+    results.forEach((s, i) => (next[missing[i]] = s));
+    safetyMap = next;
   }
 
   function toggleLiveRefresh() {
@@ -329,6 +343,7 @@
   onDestroy(() => {
     if (liveRefreshTimer) clearInterval(liveRefreshTimer);
     if (nowTicker) clearInterval(nowTicker);
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
   });
 
   async function loadLauncher() {
@@ -362,6 +377,9 @@
       const list = await api.appListForDevice(device.device_type);
       apps = list;
       appStates = await fetchAppStates(list.map((a) => a.package));
+      // Fire-and-forget: risk badges fall back to the catalog tier until the
+      // engine classifications land.
+      cacheSafety(list.map((a) => a.package));
     } catch (e) {
       appsErr = String(e);
     } finally {
@@ -391,6 +409,7 @@
     othersLoading = true;
     try {
       otherPackages = await api.listOtherPackages(serial);
+      cacheSafety(otherPackages.map((o) => o.package));
     } catch (e) {
       appActionMessage = `Could not list other packages: ${e}`;
     } finally {
@@ -521,11 +540,6 @@
   /// process by RAM, not a curated bloat entry.
   function catalogEntry(pkg: string): AppEntry | undefined {
     return apps.find((a) => a.package === pkg);
-  }
-
-  function riskLabel(entry: AppEntry | undefined): string {
-    if (!entry) return "UNKNOWN";
-    return entry.risk.toUpperCase();
   }
 
   async function forceStopFromMemory(pkg: string) {
@@ -1226,6 +1240,8 @@
     if (loadedSerial !== null && loadedSerial !== s) {
       resetDeviceState();
       loadDevice();
+      // Overrides are per-device — the new device's marks replace the old.
+      loadSafetyOverrides();
     }
     loadedSerial = s;
   });
@@ -1233,9 +1249,10 @@
   onMount(() => {
     loadDevice();
     reapplyBootTweaks();
-    // Global list — load once; it survives device switches (not cleared in
-    // resetDeviceState).
     loadSafetyOverrides();
+    keepaliveTimer = setInterval(() => {
+      api.pingDevice(serial).catch(() => {});
+    }, KEEPALIVE_INTERVAL_MS);
   });
 </script>
 
@@ -1619,7 +1636,7 @@
         {:else}
           <table class="mem-table">
             <thead>
-              <tr><th>RAM</th><th>Package</th><th class="center">Risk</th><th></th></tr>
+              <tr><th class="num">RAM</th><th>Package</th><th class="center">Risk</th><th></th></tr>
             </thead>
             <tbody>
               {#each report.top_memory as m}
@@ -1627,26 +1644,7 @@
                 {@const safety = safetyMap[m.package] ?? { kind: "safe" }}
                 {@const blocked = safety.kind === "never_disable"}
                 {@const overridden = !!safetyOverrides[m.package]}
-                {@const reason = safety.kind !== "safe" ? safety.reason : null}
-                {@const riskClass = blocked
-                  ? "risk-blocked"
-                  : overridden
-                    ? "risk-safe"
-                    : entry
-                      ? "risk-" + entry.risk
-                      : safety.kind === "caution"
-                        ? "risk-medium"
-                        : "risk-unknown"}
-                {@const riskText = blocked
-                  ? "SYSTEM"
-                  : overridden
-                    ? "SAFE"
-                    : safety.kind === "caution"
-                      ? "CAUTION"
-                      : riskLabel(entry)}
-                {@const softenable = !blocked && (safety.kind === "caution" || (!!entry && entry.risk !== "safe"))}
                 {@const dangerAction = !overridden && (!entry || entry.risk === "high" || entry.risk === "advanced" || safety.kind === "caution")}
-                {@const hasCard = blocked || overridden || safety.kind === "caution" || !!entry}
                 <tr class:dim={blocked}>
                   <td
                     class="num"
@@ -1656,105 +1654,58 @@
                     {m.mb.toFixed(1)} MB
                   </td>
                   <td class="pkg">{m.package}</td>
-                  <td class={`center risk ${riskClass}`}>
-                    {#if hasCard}
-                      <span class="risk-wrap">
-                        <button
-                          type="button"
-                          class="risk-trigger"
-                          aria-label={`Risk details for ${m.package}`}
-                        >{riskText}</button>
-                        <span class="hovercard" role="tooltip">
-                          <span class="hc-name">{entry?.name ?? m.package}</span>
-                          <span class="hc-pkg mono">{m.package}</span>
-                          <span class="hc-risk">
-                            Risk: <strong class={riskClass}>{riskText}</strong>
-                          </span>
-                          {#if overridden}
-                            <p class="hc-body hc-ok">✓ You marked this app safe — its risk warnings are suppressed.</p>
-                          {/if}
-                          {#if entry}
-                            <p class="hc-body">{entry.optimize_description}</p>
-                          {/if}
-                          {#if reason}
-                            <p class="hc-body hc-why">⚠ {reason}</p>
-                          {/if}
-                          {#if !entry && !reason && !overridden}
-                            <p class="hc-body muted">Not in the curated catalog — disabling is allowed but unverified.</p>
-                          {/if}
-                          {#if blocked}
-                            <p class="hc-note">🔒 Protected system package — can't be disabled or marked safe (it would brick the device).</p>
-                          {:else if overridden}
-                            <button
-                              class="small-action subtle hc-action"
-                              onclick={() => toggleSafetyOverride(m.package)}
-                              disabled={overrideBusy === m.package}
-                            >
-                              {#if overrideBusy === m.package}
-                                <span class="busy"><span class="spinner" aria-hidden="true"></span>Saving…</span>
-                              {:else}
-                                Restore risk classification
-                              {/if}
-                            </button>
-                          {:else if softenable}
-                            <button
-                              class="small-action hc-action"
-                              onclick={() => toggleSafetyOverride(m.package)}
-                              disabled={overrideBusy === m.package}
-                            >
-                              {#if overrideBusy === m.package}
-                                <span class="busy"><span class="spinner" aria-hidden="true"></span>Saving…</span>
-                              {:else}
-                                Mark as safe / no risk
-                              {/if}
-                            </button>
-                          {:else}
-                            <p class="hc-note muted">Already classified safe.</p>
-                          {/if}
-                        </span>
-                      </span>
-                    {:else}
-                      {riskText}
-                    {/if}
+                  <td class="center risk-cell">
+                    <RiskBadge
+                      pkg={m.package}
+                      name={entry?.name}
+                      tier={entry?.risk}
+                      description={entry?.optimize_description}
+                      {safety}
+                      {overridden}
+                      busy={overrideBusy === m.package}
+                      onToggleSafe={toggleSafetyOverride}
+                    />
                   </td>
                   <td class="row-actions">
-                    <button
-                      class="small-action subtle"
-                      onclick={() => forceStopFromMemory(m.package)}
-                      disabled={appActionBusy === m.package}
-                      title="am force-stop {m.package} — frees its RAM now; the app restarts on next launch"
-                    >
-                      {#if appActionBusy === m.package}
-                        <span class="busy"><span class="spinner" aria-hidden="true"></span>Stopping…</span>
-                      {:else}
-                        Force stop
-                      {/if}
-                    </button>
-                    <button
-                      class="small-action subtle"
-                      onclick={() => clearCacheFor(m.package)}
-                      disabled={appActionBusy === m.package}
-                      title="pm clear-cache {m.package} — drops cached files; safe, rebuilds on next launch"
-                    >
-                      Clear cache
-                    </button>
-                    {#if blocked}
-                      <span class="muted small" title={safety.reason}>Protected</span>
-                    {:else}
+                    <div class="tool-group">
                       <button
-                        class="small-action"
-                        class:danger={dangerAction}
-                        onclick={() => safeDisableFromMemory(m.package, m.mb)}
+                        class="small-action subtle"
+                        onclick={() => forceStopFromMemory(m.package)}
                         disabled={appActionBusy === m.package}
-                        title="pm disable-user --user 0 {m.package}"
+                        title="am force-stop {m.package} — frees its RAM now; the app restarts on next launch"
                       >
                         {#if appActionBusy === m.package}
-                          <span class="busy"><span class="spinner" aria-hidden="true"></span>Disabling…</span>
+                          <span class="busy"><span class="spinner" aria-hidden="true"></span>Stopping…</span>
                         {:else}
-                          Disable
+                          Force stop
                         {/if}
                       </button>
-                    {/if}
+                      <button
+                        class="small-action subtle"
+                        onclick={() => clearCacheFor(m.package)}
+                        disabled={appActionBusy === m.package}
+                        title="pm clear-cache {m.package} — drops cached files; safe, rebuilds on next launch"
+                      >
+                        Clear cache
+                      </button>
+                      {#if safety.kind === "never_disable"}
+                        <span class="muted small" title={safety.reason}>Protected</span>
+                      {:else}
+                        <button
+                          class="small-action"
+                          class:danger={dangerAction}
+                          onclick={() => safeDisableFromMemory(m.package, m.mb)}
+                          disabled={appActionBusy === m.package}
+                          title="pm disable-user --user 0 {m.package}"
+                        >
+                          {#if appActionBusy === m.package}
+                            <span class="busy"><span class="spinner" aria-hidden="true"></span>Disabling…</span>
+                          {:else}
+                            Disable
+                          {/if}
+                        </button>
+                      {/if}
+                    </div>
                   </td>
                 </tr>
               {/each}
@@ -1802,6 +1753,8 @@
       {:else}
         <p class="muted small legend">
           <strong>State</strong> is what the device reports right now.
+          <strong>Risk</strong> explains itself on hover — including how the rating was
+          decided, and a button to mark an app safe on this device.
           <strong>Recommended</strong> is what v1's Optimize wizard would pick for you —
           click to apply, or leave it. <strong>Tools</strong> has the Play Store link
           plus APK backup and copy-to-another-device.
@@ -1849,9 +1802,14 @@
                 usage={appUsage[a.package]}
                 showUsage={state !== "missing"}
                 risk={a.risk}
+                safety={safetyMap[a.package]}
+                overridden={!!safetyOverrides[a.package]}
+                riskBusy={overrideBusy === a.package}
+                onToggleSafe={toggleSafetyOverride}
               >
                 {#snippet actions()}
                 <td class="rec-cell">
+                  <div class="tool-group start">
                   {#if rec.kind === "act"}
                     <button
                       class="small-action recommended"
@@ -1903,38 +1861,41 @@
                       title="pm enable"
                     >Enable</button>
                   {/if}
+                  </div>
                 </td>
                 <td class="center tools-cell">
-                  {#if a.play_store}
-                    <button
-                      class="small-action"
-                      onclick={() => openInPlayStore(a.package)}
-                      disabled={appActionBusy === a.package}
-                      title="Open {a.name} on the Play Store on the device"
-                    >
-                      Play Store
-                    </button>
-                  {/if}
-                  {#if state !== "missing"}
-                    <button
-                      class="small-action subtle"
-                      onclick={() => backupApkFor(a.package)}
-                      disabled={appActionBusy === a.package}
-                      title="Save this app's APK(s) to a folder on this computer"
-                    >
-                      Backup
-                    </button>
-                    <button
-                      class="small-action subtle"
-                      onclick={() => startClone(a.package)}
-                      disabled={appActionBusy === a.package}
-                      title="Install this app onto another connected device (app data does not transfer)"
-                    >
-                      Copy to…
-                    </button>
-                  {:else if !a.play_store}
-                    <span class="muted small">—</span>
-                  {/if}
+                  <div class="tool-group">
+                    {#if a.play_store}
+                      <button
+                        class="small-action"
+                        onclick={() => openInPlayStore(a.package)}
+                        disabled={appActionBusy === a.package}
+                        title="Open {a.name} on the Play Store on the device"
+                      >
+                        Play Store
+                      </button>
+                    {/if}
+                    {#if state !== "missing"}
+                      <button
+                        class="small-action subtle"
+                        onclick={() => backupApkFor(a.package)}
+                        disabled={appActionBusy === a.package}
+                        title="Save this app's APK(s) to a folder on this computer"
+                      >
+                        Backup
+                      </button>
+                      <button
+                        class="small-action subtle"
+                        onclick={() => startClone(a.package)}
+                        disabled={appActionBusy === a.package}
+                        title="Install this app onto another connected device (app data does not transfer)"
+                      >
+                        Copy to…
+                      </button>
+                    {:else if !a.play_store}
+                      <span class="muted small">—</span>
+                    {/if}
+                  </div>
                 </td>
                 {/snippet}
               </AppRow>
@@ -1959,10 +1920,11 @@
           {:else}
             <table class="app-table">
               <thead>
-                <tr><th>Package</th><th class="center">Type</th><th class="center">State</th><th>Actions</th><th class="center">Tools</th></tr>
+                <tr><th>Package</th><th class="center">Type</th><th class="center">State</th><th class="center">Risk</th><th>Actions</th><th class="center">Tools</th></tr>
               </thead>
               <tbody>
                 {#each visibleOthers as o (o.package)}
+                  {@const safety = safetyMap[o.package] ?? { kind: "safe" }}
                   <tr>
                     <td class="app-cell">
                       {#if o.name}
@@ -1984,19 +1946,33 @@
                         <div class="cell-cue"><UsageBadge usage={appUsage[o.package]} /></div>
                       {/if}
                     </td>
+                    <td class="center risk-cell">
+                      <RiskBadge
+                        pkg={o.package}
+                        name={o.name ?? undefined}
+                        {safety}
+                        overridden={!!safetyOverrides[o.package]}
+                        busy={overrideBusy === o.package}
+                        onToggleSafe={toggleSafetyOverride}
+                      />
+                    </td>
                     <td class="rec-cell">
-                      {#if o.enabled}
-                        <button class="small-action subtle" onclick={() => disableOther(o.package)} disabled={appActionBusy === o.package} title="pm disable-user --user 0">Disable</button>
-                        <button class="small-action subtle danger" onclick={() => uninstallOther(o.package)} disabled={appActionBusy === o.package} title="pm uninstall --user 0">Uninstall</button>
-                      {:else}
-                        <button class="small-action subtle" onclick={() => enableOther(o.package)} disabled={appActionBusy === o.package} title="pm enable">Enable</button>
-                      {/if}
+                      <div class="tool-group start">
+                        {#if o.enabled}
+                          <button class="small-action subtle" onclick={() => disableOther(o.package)} disabled={appActionBusy === o.package} title="pm disable-user --user 0">Disable</button>
+                          <button class="small-action subtle danger" onclick={() => uninstallOther(o.package)} disabled={appActionBusy === o.package} title="pm uninstall --user 0">Uninstall</button>
+                        {:else}
+                          <button class="small-action subtle" onclick={() => enableOther(o.package)} disabled={appActionBusy === o.package} title="pm enable">Enable</button>
+                        {/if}
+                      </div>
                     </td>
                     <td class="center tools-cell">
-                      <button class="small-action subtle" onclick={() => backupApkFor(o.package)} disabled={appActionBusy === o.package} title="Save this app's APK(s) to a folder on this computer">Backup</button>
-                      <button class="small-action subtle" onclick={() => startClone(o.package)} disabled={appActionBusy === o.package} title="Install this app onto another connected device">Copy to…</button>
-                      <button class="small-action subtle" onclick={() => clearCacheFor(o.package)} disabled={appActionBusy === o.package} title="pm clear-cache — drops cached files; safe, rebuilds on next launch">Clear cache</button>
-                      <button class="small-action subtle danger" onclick={() => clearDataFor(o.package)} disabled={appActionBusy === o.package} title="pm clear — wipes accounts, settings, downloads; resets to fresh install (not reversible)">Clear data</button>
+                      <div class="tool-group">
+                        <button class="small-action subtle" onclick={() => backupApkFor(o.package)} disabled={appActionBusy === o.package} title="Save this app's APK(s) to a folder on this computer">Backup</button>
+                        <button class="small-action subtle" onclick={() => startClone(o.package)} disabled={appActionBusy === o.package} title="Install this app onto another connected device">Copy to…</button>
+                        <button class="small-action subtle" onclick={() => clearCacheFor(o.package)} disabled={appActionBusy === o.package} title="pm clear-cache — drops cached files; safe, rebuilds on next launch">Clear cache</button>
+                        <button class="small-action subtle danger" onclick={() => clearDataFor(o.package)} disabled={appActionBusy === o.package} title="pm clear — wipes accounts, settings, downloads; resets to fresh install (not reversible)">Clear data</button>
+                      </div>
                     </td>
                   </tr>
                 {/each}
@@ -2332,13 +2308,6 @@
     /* Keep button + subtle override on one row when possible. */
     white-space: nowrap;
   }
-  .app-table .rec-cell .small-action {
-    margin-right: 0.3rem;
-  }
-  .app-table .rec-cell .done {
-    display: inline-block;
-    margin-right: 0.5rem;
-  }
   th {
     color: var(--fg-muted);
     font-weight: 500;
@@ -2346,128 +2315,39 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  td.num,
+  th.num {
+    /* Numbers (and their header) right-align so magnitudes compare by eye. */
+    text-align: right;
+  }
   td.num {
     font-family: ui-monospace, monospace;
-    text-align: right;
     width: 100px;
   }
   td.num.warn { color: var(--danger-strong); }
   td.num.caution { color: var(--warn); }
-  td.pkg, td.mono {
+  td.pkg {
     font-family: ui-monospace, monospace;
     font-size: 0.85rem;
   }
-  td.risk {
-    font-family: ui-monospace, monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.04em;
+  /* Risk pills bring their own hovercard (RiskBadge component); the cell just
+     needs to stay overflow-visible so the card isn't clipped by the table. */
+  td.risk-cell {
     overflow: visible;
+    white-space: nowrap;
   }
-  /* Risk badge → hovercard. The card is a *sibling* of the trigger button
-     (not a child — a button can't contain the card's "Mark as safe" button),
-     both inside a position:relative wrapper. A transparent ::before bridge
-     spans the 6px gap so moving the cursor from trigger to card never drops
-     :hover and the card's action button stays reachable. */
-  .risk-wrap {
-    position: relative;
-    display: inline-block;
+  /* Uniform action clusters. One flex group per cell keeps buttons on a tidy
+     grid instead of ragged inline wrapping — right-aligned for trailing action
+     columns, `start` for mid-table ones. */
+  .tool-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+    justify-content: flex-end;
   }
-  .risk-trigger {
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    letter-spacing: inherit;
-    color: inherit;
-    cursor: pointer;
-    border-bottom: 1px dotted currentColor;
-    line-height: 1.1;
-  }
-  .risk-trigger:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 2px;
-  }
-  .hovercard {
-    position: absolute;
-    z-index: 60;
-    top: calc(100% + 6px);
-    right: 0;
-    width: 280px;
-    max-width: 78vw;
-    text-align: left;
-    color: var(--fg-primary);
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.7rem 0.8rem;
-    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 0.85rem;
-    letter-spacing: normal;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-3px);
-    transition:
-      opacity 0.1s ease,
-      transform 0.1s ease,
-      visibility 0.1s;
-    pointer-events: none;
-  }
-  /* Invisible hover bridge across the gap between trigger and card. */
-  .hovercard::before {
-    content: "";
-    position: absolute;
-    top: -8px;
-    left: 0;
-    right: 0;
-    height: 8px;
-  }
-  .risk-wrap:hover .hovercard,
-  .risk-wrap:focus-within .hovercard {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-  .hc-name {
-    display: block;
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
-  .hc-pkg {
-    display: block;
-    font-size: 0.72rem;
-    color: var(--fg-faint);
-    margin-top: 0.1rem;
-    word-break: break-all;
-  }
-  .hc-risk {
-    display: block;
-    font-size: 0.78rem;
-    color: var(--fg-secondary);
-    margin-top: 0.45rem;
-  }
-  .hc-body {
-    margin: 0.45rem 0 0;
-    font-size: 0.82rem;
-    line-height: 1.35;
-    color: var(--fg-primary);
-  }
-  .hc-why {
-    color: var(--warn);
-  }
-  .hc-ok {
-    color: var(--ok);
-  }
-  .hc-note {
-    margin: 0.55rem 0 0;
-    font-size: 0.78rem;
-    color: var(--fg-muted);
-  }
-  .hc-action {
-    margin-top: 0.6rem;
+  .tool-group.start {
+    justify-content: flex-start;
   }
   .small {
     font-size: 0.82rem;

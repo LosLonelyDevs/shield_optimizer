@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
-  import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "$lib/api";
-  import sideloadCatalog from "$lib/sideload-catalog.json";
   import type { DiscoveredApk, QuickAppRow } from "$lib/types";
 
   let { serial }: { serial: string } = $props();
@@ -118,14 +116,6 @@
     return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
   }
 
-  async function openDownloadPage(url: string) {
-    try {
-      await openUrl(url);
-    } catch (e) {
-      sideloadResult = `Open link failed: ${e}`;
-    }
-  }
-
   async function loadQuickApps() {
     try {
       quickApps = await api.listQuickApps(serial);
@@ -174,7 +164,8 @@
   });
 </script>
 
-<div class="card" role="tabpanel" tabindex={0} id="tabpanel-sideload" aria-labelledby="tab-sideload">
+<div role="tabpanel" tabindex={0} id="tabpanel-sideload" aria-labelledby="tab-sideload">
+<div class="card">
   <div class="card-header">
     <h2>Install APK</h2>
     <div class="header-actions">
@@ -240,89 +231,67 @@
       {#if sideloadHint}<span class="muted small"> — {sideloadHint}</span>{/if}
     </div>
   {/if}
+</div>
 
-  {#if quickApps.length > 0}
-    <div class="quick-install">
-      <h3>Quick install — auto-download for this device</h3>
-      <p class="muted small">
-        We fetch the build that matches your device's CPU from the official source and
-        install it. This briefly turns off Play Protect (which flags these apps) and
-        restores it afterward.
-      </p>
-      <ul class="catalog-list">
-        {#each quickApps as q (q.package)}
-          <li>
-            <div>
-              <div class="apk-name">{q.name}</div>
-              <div class="muted small">{q.description}</div>
-              <div class="muted small mono">
-                {q.package}
-                {#if q.installed}<span class="tag installed">INSTALLED</span>{/if}
-              </div>
-              {#if quickMsgPkg === q.package && quickMsg}
-                <div class="install-result" class:ok={quickOk} class:bad={!quickOk}>
-                  <span>{quickOk ? "✓" : "✕"} {quickMsg}</span>
-                </div>
-              {/if}
-            </div>
-            <button
-              class="small-action primary"
-              onclick={() => installQuick(q.package)}
-              disabled={quickBusy !== null}
-            >
-              {quickBusy === q.package ? "Installing…" : q.installed ? "Reinstall" : "Install"}
-            </button>
-          </li>
-        {/each}
-      </ul>
-      <div class="shizuku-row">
-        <div>
-          <div class="apk-name">Shizuku</div>
-          <div class="muted small">
-            Installs Shizuku if it's missing, then starts its service so other apps can use
-            elevated ADB permissions — no root, and no pairing code (Android TV never shows
-            one). The service stops on reboot; press this again to start it back up.
-          </div>
-          {#if shizukuMsg}
-            <div class="install-result" class:ok={shizukuOk} class:bad={!shizukuOk}>
-              <span>{shizukuOk ? "✓" : "✕"} {shizukuMsg}</span>
-            </div>
-          {/if}
-        </div>
-        <button class="small-action" onclick={setupShizuku} disabled={shizukuBusy}>
-          {shizukuBusy ? "Starting…" : "Install / Start"}
-        </button>
+<div class="card section-card">
+  <div class="shizuku-row">
+    <div>
+      <h2>Shizuku</h2>
+      <div class="muted small">
+        Installs Shizuku if it's missing, then starts its service so other apps can use
+        elevated ADB permissions — no root, and no pairing code (Android TV never shows
+        one). The service stops on reboot; press this again to start it back up.
       </div>
+      {#if shizukuMsg}
+        <div class="install-result" class:ok={shizukuOk} class:bad={!shizukuOk}>
+          <span>{shizukuOk ? "✓" : "✕"} {shizukuMsg}</span>
+        </div>
+      {/if}
     </div>
-  {/if}
+    <button class="primary" onclick={setupShizuku} disabled={shizukuBusy}>
+      {shizukuBusy ? "Starting…" : "Install / Start"}
+    </button>
+  </div>
+</div>
 
-  <details class="sideload-catalog">
-    <summary>Popular sideloads — common apps you download to install ({sideloadCatalog.length})</summary>
-    <p class="muted small">
-      Apps people commonly install that aren't on the Play Store. Links go to the
-      official source only — download the APK there, then install it with the
-      buttons above. You're sideloading third-party software; check it's the
-      official release.
-    </p>
+<div class="card section-card">
+  <h2>Quick install</h2>
+  <p class="muted small">
+    We fetch the build that matches your device's CPU from the official source and
+    install it. This briefly turns off Play Protect (which flags these apps) and
+    restores it afterward.
+  </p>
+  {#if quickApps.length > 0}
     <ul class="catalog-list">
-      {#each sideloadCatalog as entry (entry.package)}
+      {#each quickApps as q (q.package)}
         <li>
           <div>
-            <div class="apk-name">{entry.name}</div>
-            <div class="muted small">{entry.description}</div>
-            <div class="muted small mono">{entry.package}</div>
+            <div class="apk-name">{q.name}</div>
+            <div class="muted small">{q.description}</div>
+            <div class="muted small mono">
+              {q.package}
+              {#if q.installed}<span class="tag installed">INSTALLED</span>{/if}
+            </div>
+            {#if quickMsgPkg === q.package && quickMsg}
+              <div class="install-result" class:ok={quickOk} class:bad={!quickOk}>
+                <span>{quickOk ? "✓" : "✕"} {quickMsg}</span>
+              </div>
+            {/if}
           </div>
           <button
-            class="small-action"
-            onclick={() => openDownloadPage(entry.url)}
-            title={entry.url}
+            class="small-action primary"
+            onclick={() => installQuick(q.package)}
+            disabled={quickBusy !== null}
           >
-            Open download page
+            {quickBusy === q.package ? "Installing…" : q.installed ? "Reinstall" : "Install"}
           </button>
         </li>
       {/each}
     </ul>
-  </details>
+  {:else}
+    <p class="muted small">Catalog not loaded — check the connection and reopen this tab.</p>
+  {/if}
+</div>
 </div>
 
 <style>
@@ -414,36 +383,21 @@
     font-size: 0.88rem;
     word-break: break-all;
   }
-  .quick-install {
-    margin-top: 1.5rem;
-    padding-top: 1.2rem;
-    border-top: 1px solid var(--border);
-  }
-  .quick-install h3 {
-    margin: 0 0 0.3rem;
-    font-size: 1rem;
+  .section-card {
+    margin-top: 1rem;
   }
   .shizuku-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.6rem 0 0;
-    margin-top: 0.4rem;
-    border-top: 1px dashed var(--border);
+  }
+  .shizuku-row h2 {
+    margin-bottom: 0.3rem;
   }
   .shizuku-row button {
     white-space: nowrap;
     flex-shrink: 0;
-  }
-  .sideload-catalog {
-    margin-top: 1.5rem;
-    padding-top: 1.2rem;
-    border-top: 1px solid var(--border);
-  }
-  .sideload-catalog summary {
-    cursor: pointer;
-    font-weight: 600;
   }
   .catalog-list {
     list-style: none;

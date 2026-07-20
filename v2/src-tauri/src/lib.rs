@@ -74,6 +74,7 @@ pub fn run() {
             devices::list_devices,
             devices::device_profile,
             devices::connect_device,
+            devices::ping_device,
             devices::disconnect_device,
             devices::pair_device,
             devices::rename_device,

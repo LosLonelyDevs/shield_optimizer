@@ -9,7 +9,7 @@ name: v2 Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, android-desktop]
     paths:
       - 'v2/**'
       - '.github/workflows/v2-tests.yml'

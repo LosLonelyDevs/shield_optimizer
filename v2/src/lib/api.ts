@@ -76,6 +76,9 @@ export const api = {
 
   connectDevice: (address: string) =>
     invoke<ConnectResult>("connect_device", { address }),
+  /// Cheap reachability probe; also heals a dropped network connection via
+  /// the driver's reconnect-and-retry. Never throws — false means unreachable.
+  pingDevice: (serial: string) => invoke<boolean>("ping_device", { serial }),
   disconnectDevice: (serial: string) =>
     invoke<ConnectResult>("disconnect_device", { serial }),
   pairDevice: (pairAddress: string, pin: string) =>
@@ -155,13 +158,16 @@ export const api = {
   appUsageMap: (serial: string) =>
     invoke<Record<string, import("$lib/types").AppUsage>>("app_usage_map", { serial }),
   safetyInfo: (pkg: string) => invoke<Safety>("safety_info", { package: pkg }),
-  /// Packages the user has manually declared safe (global, persisted). Layered
-  /// over the raw safety classification on the Health page.
-  listSafetyOverrides: () => invoke<string[]>("list_safety_overrides"),
-  /// Mark `pkg` safe (`safe = true`) or clear the override. Returns the full
-  /// updated list. Rejects (throws) for NEVER_DISABLE packages.
-  setSafetyOverride: (pkg: string, safe: boolean) =>
-    invoke<string[]>("set_safety_override", { package: pkg, safe }),
+  /// Packages the user has manually declared safe on this device (persisted
+  /// against the device's stable identity, so marks survive reconnects and IP
+  /// changes). Layered over the raw safety classification.
+  listSafetyOverrides: (serial: string) =>
+    invoke<string[]>("list_safety_overrides", { serial }),
+  /// Mark `pkg` safe on this device (`safe = true`) or clear the override.
+  /// Returns the device's full updated list. Rejects (throws) for
+  /// NEVER_DISABLE packages.
+  setSafetyOverride: (serial: string, pkg: string, safe: boolean) =>
+    invoke<string[]>("set_safety_override", { serial, package: pkg, safe }),
   trimCaches: (serial: string) => invoke<ActionResult>("trim_caches", { serial }),
   clearAppCache: (serial: string, pkg: string) =>
     invoke<ActionResult>("clear_app_cache", { serial, package: pkg }),

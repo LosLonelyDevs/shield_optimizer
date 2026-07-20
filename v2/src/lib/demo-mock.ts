@@ -300,6 +300,8 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       };
     case "list_devices":
       return [device];
+    case "ping_device":
+      return true;
     case "device_profile":
       return device;
     case "health_report":
@@ -381,10 +383,12 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       };
     case "list_quick_apps":
       return [
-        { name: "SmartTube", package: "com.teamsmart.videomanager.tv", description: "Ad-free YouTube for Android TV — SponsorBlock, no ads, 4K/60.", source: "github", repo: "yuliskov/SmartTube", asset_match: "smarttube_stable", fallback_url: null, installed: true },
-        { name: "Aurora Store", package: "com.aurora.store", description: "Open-source Play Store client — install/update without a Google account.", source: "gitlab", repo: "AuroraOSS/AuroraStore", asset_match: null, fallback_url: null, installed: false },
-        { name: "Obtainium", package: "dev.imranr.obtainium", description: "Install and auto-update apps straight from their GitHub/GitLab releases.", source: "github", repo: "ImranR98/Obtainium", asset_match: null, fallback_url: null, installed: false },
-        { name: "AdGuard for Android TV", package: "com.adguard.android.tv", description: "System-wide ad and tracker blocking via a local VPN.", source: "url", repo: null, asset_match: null, fallback_url: "https://agrd.io/tvapk", installed: false },
+        { name: "TizenTube Cobalt", package: "io.gh.reisxd.tizentube.cobalt", description: "Ad-free YouTube with SponsorBlock and DeArrow — the Cobalt build runs on Android TV.", source: "github", repo: "reisxd/TizenTubeCobalt", asset_match: null, tag: null, fallback_url: null, installed: true },
+        { name: "Flicky", package: "app.flicky", description: "F-Droid client built for wide screens and TVs — browse and install open-source apps from the couch.", source: "github", repo: "mlm-games/flicky", asset_match: null, tag: null, fallback_url: null, installed: false },
+        { name: "MATVT", package: "io.github.virresh.matvt", description: "Virtual mouse for Android TV, driven by the remote's d-pad — for apps that were never built for TV.", source: "github", repo: "virresh/matvt", asset_match: "pre2", tag: "v1.0.7-pre", fallback_url: null, installed: false },
+        { name: "ObtainX", package: "dev.bikram.obtainx", description: "Get app updates straight from their GitHub releases — Obtainium reimagined with a TV-friendly UI.", source: "github", repo: "bikram-agarwal/ObtainX", asset_match: null, tag: null, fallback_url: null, installed: false },
+        { name: "Aurora Store", package: "com.aurora.store", description: "Open-source Play Store client — install/update apps without a Google account.", source: "gitlab", repo: "AuroraOSS/AuroraStore", asset_match: null, tag: null, fallback_url: null, installed: false },
+        { name: "LocalSend", package: "org.localsend.localsend_app", description: "AirDrop-style local file sharing between your PC, phone, and TV.", source: "github", repo: "localsend/localsend", asset_match: null, tag: null, fallback_url: null, installed: false },
       ];
     case "preview_apply":
       return {

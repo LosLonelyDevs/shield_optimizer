@@ -157,7 +157,44 @@ impl SubprocessAdb {
         self.run_with_timeout(args, self.command_timeout).await
     }
 
+    /// Run with automatic reconnect-and-retry for network devices.
+    ///
+    /// The adb daemon silently drops a TCP device when its socket dies —
+    /// the device slept (Shield network standby), Wi-Fi power save kicked in,
+    /// or a router idle timer reaped the connection. From then on every
+    /// `-s ip:port` command fails with "device not found" until someone runs
+    /// `adb connect` again, which adb itself never does. So when a command
+    /// aimed at an `ip:port` serial fails with a transport-lost message, we
+    /// reconnect and retry it once. USB serials never take this path.
     async fn run_with_timeout(&self, args: &[&str], dur: Duration) -> AdbResult<AdbOutput> {
+        let first = self.run_once(args, dur).await;
+        let Err(AdbError::NonZeroExit { stderr, .. }) = &first else {
+            return first;
+        };
+        let Some(serial) = network_serial(args) else {
+            return first;
+        };
+        if !transport_lost(stderr) {
+            return first;
+        }
+        warn!(%serial, "adb transport lost; reconnecting");
+        if !self.try_reconnect(&serial).await {
+            return first;
+        }
+        self.run_once(args, dur).await
+    }
+
+    /// One `adb connect` round-trip. True when the daemon reports the device
+    /// registered again — "connected to X" or "already connected to X". A
+    /// "failed to connect" (device still asleep / unreachable) reads false.
+    async fn try_reconnect(&self, serial: &str) -> bool {
+        match self.run_once(&["connect", serial], RECONNECT_TIMEOUT).await {
+            Ok(out) => out.combined().to_lowercase().contains("connected to"),
+            Err(_) => false,
+        }
+    }
+
+    async fn run_once(&self, args: &[&str], dur: Duration) -> AdbResult<AdbOutput> {
         if !self.binary.exists() {
             return Err(AdbError::BinaryMissing {
                 path: self.binary.display().to_string(),
@@ -221,32 +258,8 @@ impl SubprocessAdb {
             exit_code,
         })
     }
-}
 
-/// Ceiling for file transfers: long enough for multi-GB pulls over slow Wi-Fi,
-/// short enough that a genuinely hung adb still surfaces as an error.
-const TRANSFER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-
-#[async_trait]
-impl AdbDriver for SubprocessAdb {
-    async fn raw(&self, args: &[&str]) -> AdbResult<AdbOutput> {
-        self.run(args).await
-    }
-
-    async fn raw_transfer(&self, args: &[&str]) -> AdbResult<AdbOutput> {
-        self.run_with_timeout(args, TRANSFER_TIMEOUT).await
-    }
-
-    async fn shell(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
-        self.run(&["-s", serial, "shell", command]).await
-    }
-
-    async fn shell_long(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
-        self.run_with_timeout(&["-s", serial, "shell", command], TRANSFER_TIMEOUT)
-            .await
-    }
-
-    async fn raw_bytes(&self, args: &[&str]) -> AdbResult<Vec<u8>> {
+    async fn raw_bytes_once(&self, args: &[&str]) -> AdbResult<Vec<u8>> {
         if !self.binary.exists() {
             return Err(AdbError::BinaryMissing {
                 path: self.binary.display().to_string(),
@@ -287,6 +300,75 @@ impl AdbDriver for SubprocessAdb {
             true,
         );
         Ok(output.stdout)
+    }
+}
+
+/// Ceiling for file transfers: long enough for multi-GB pulls over slow Wi-Fi,
+/// short enough that a genuinely hung adb still surfaces as an error.
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Bound on the `adb connect` retry so a dead device adds seconds, not the
+/// full command timeout, to the original failure.
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// True when adb's stderr says the transport to the device is gone (daemon
+/// dropped the TCP session) rather than the command itself failing.
+fn transport_lost(text: &str) -> bool {
+    let t = text.to_lowercase();
+    (t.contains("device") && t.contains("not found"))
+        || t.contains("device offline")
+        || t.contains("device still authorizing")
+        || t.contains("connection reset")
+        || t.contains("broken pipe")
+        || t.contains("error: closed")
+}
+
+/// The `-s <serial>` value in `args`, only when it names a network (`ip:port`)
+/// device — the only transport adb drops on idle and the only one
+/// `adb connect` can bring back.
+fn network_serial(args: &[&str]) -> Option<String> {
+    let idx = args.iter().position(|a| *a == "-s")?;
+    let serial = *args.get(idx + 1)?;
+    serial.contains(':').then(|| serial.to_string())
+}
+
+#[async_trait]
+impl AdbDriver for SubprocessAdb {
+    async fn raw(&self, args: &[&str]) -> AdbResult<AdbOutput> {
+        self.run(args).await
+    }
+
+    async fn raw_transfer(&self, args: &[&str]) -> AdbResult<AdbOutput> {
+        self.run_with_timeout(args, TRANSFER_TIMEOUT).await
+    }
+
+    async fn shell(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
+        self.run(&["-s", serial, "shell", command]).await
+    }
+
+    async fn shell_long(&self, serial: &str, command: &str) -> AdbResult<AdbOutput> {
+        self.run_with_timeout(&["-s", serial, "shell", command], TRANSFER_TIMEOUT)
+            .await
+    }
+
+    async fn raw_bytes(&self, args: &[&str]) -> AdbResult<Vec<u8>> {
+        // Same reconnect-and-retry as `run_with_timeout` — binary capture
+        // (screenshots) is usually the first call to notice a dropped device.
+        let first = self.raw_bytes_once(args).await;
+        let Err(AdbError::NonZeroExit { stderr, .. }) = &first else {
+            return first;
+        };
+        let Some(serial) = network_serial(args) else {
+            return first;
+        };
+        if !transport_lost(stderr) {
+            return first;
+        }
+        warn!(%serial, "adb transport lost; reconnecting");
+        if !self.try_reconnect(&serial).await {
+            return first;
+        }
+        self.raw_bytes_once(args).await
     }
 
     async fn spawn(&self, args: &[&str]) -> AdbResult<tokio::process::Child> {
@@ -543,6 +625,49 @@ mod tests {
             exit_code: Some(1),
         };
         assert!(!fail.success());
+    }
+
+    #[test]
+    fn transport_lost_matches_disconnect_messages_only() {
+        // The messages adb emits once the daemon has dropped a TCP device.
+        assert!(transport_lost("adb: device '192.168.1.100:5555' not found"));
+        assert!(transport_lost("error: device offline"));
+        assert!(transport_lost("error: closed"));
+        assert!(transport_lost("Connection reset by peer"));
+        // Command-level failures must not trigger a reconnect cycle.
+        assert!(!transport_lost("Failure [DELETE_FAILED_INTERNAL_ERROR]"));
+        assert!(!transport_lost("Error: unknown command frobnicate"));
+        assert!(!transport_lost(""));
+    }
+
+    #[test]
+    fn network_serial_only_matches_ip_port_targets() {
+        assert_eq!(
+            network_serial(&["-s", "192.168.1.100:5555", "shell", "true"]),
+            Some("192.168.1.100:5555".to_string())
+        );
+        // USB serials have no ':' — adb connect can't help them.
+        assert_eq!(
+            network_serial(&["-s", "0123456789ABCDEF", "shell", "true"]),
+            None
+        );
+        // No -s at all (e.g. `adb devices`).
+        assert_eq!(network_serial(&["devices"]), None);
+    }
+
+    #[test]
+    fn reconnect_output_classification() {
+        // What try_reconnect greps for: "connected to" covers both fresh and
+        // already-connected; "failed to connect to" must NOT match.
+        for ok in [
+            "connected to 192.168.1.100:5555",
+            "already connected to 192.168.1.100:5555",
+        ] {
+            assert!(ok.to_lowercase().contains("connected to"), "{ok}");
+        }
+        assert!(!"failed to connect to '192.168.1.100:5555'"
+            .to_lowercase()
+            .contains("connected to"));
     }
 
     #[test]

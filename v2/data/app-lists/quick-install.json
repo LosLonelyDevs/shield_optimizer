@@ -1,11 +1,42 @@
 [
   {
-    "name": "SmartTube",
-    "package": "com.teamsmart.videomanager.tv",
-    "description": "Ad-free YouTube for Android TV — SponsorBlock, no ads, 4K/60.",
+    "name": "TizenTube Cobalt",
+    "package": "io.gh.reisxd.tizentube.cobalt",
+    "description": "Ad-free YouTube with SponsorBlock and DeArrow — the Cobalt build runs on Android TV.",
     "source": "github",
-    "repo": "yuliskov/SmartTube",
-    "asset_match": "smarttube_stable",
+    "repo": "reisxd/TizenTubeCobalt",
+    "asset_match": null,
+    "tag": null,
+    "fallback_url": null
+  },
+  {
+    "name": "Flicky",
+    "package": "app.flicky",
+    "description": "F-Droid client built for wide screens and TVs — browse and install open-source apps from the couch.",
+    "source": "github",
+    "repo": "mlm-games/flicky",
+    "asset_match": null,
+    "tag": null,
+    "fallback_url": null
+  },
+  {
+    "name": "MATVT",
+    "package": "io.github.virresh.matvt",
+    "description": "Virtual mouse for Android TV, driven by the remote's d-pad — for apps that were never built for TV.",
+    "source": "github",
+    "repo": "virresh/matvt",
+    "asset_match": "pre2",
+    "tag": "v1.0.7-pre",
+    "fallback_url": null
+  },
+  {
+    "name": "ObtainX",
+    "package": "dev.bikram.obtainx",
+    "description": "Get app updates straight from their GitHub releases — Obtainium reimagined with a TV-friendly UI.",
+    "source": "github",
+    "repo": "bikram-agarwal/ObtainX",
+    "asset_match": null,
+    "tag": null,
     "fallback_url": null
   },
   {
@@ -15,15 +46,7 @@
     "source": "gitlab",
     "repo": "AuroraOSS/AuroraStore",
     "asset_match": null,
-    "fallback_url": null
-  },
-  {
-    "name": "Obtainium",
-    "package": "dev.imranr.obtainium",
-    "description": "Install and auto-update apps straight from their GitHub/GitLab releases.",
-    "source": "github",
-    "repo": "ImranR98/Obtainium",
-    "asset_match": null,
+    "tag": null,
     "fallback_url": null
   },
   {
@@ -33,15 +56,7 @@
     "source": "github",
     "repo": "localsend/localsend",
     "asset_match": null,
+    "tag": null,
     "fallback_url": null
-  },
-  {
-    "name": "AdGuard for Android TV",
-    "package": "com.adguard.android.tv",
-    "description": "System-wide ad and tracker blocking via a local VPN.",
-    "source": "url",
-    "repo": null,
-    "asset_match": null,
-    "fallback_url": "https://agrd.io/tvapk"
   }
 ]

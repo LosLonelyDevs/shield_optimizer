@@ -131,6 +131,17 @@ fn connect_result_from(out: &crate::adb::AdbOutput) -> ConnectResult {
     }
 }
 
+/// `ping_device` — cheap reachability probe (`shell true`). The device page
+/// calls this on an interval while open: the traffic keeps Wi-Fi power-save
+/// and router idle timers from reaping the TCP session, and when the daemon
+/// has already dropped the device the driver's reconnect-and-retry brings it
+/// back. Returns a bool instead of erroring so callers can poll quietly.
+#[tauri::command]
+pub async fn ping_device(state: State<'_, AppState>, serial: String) -> Result<bool, String> {
+    let adb = state.adb_snapshot().await;
+    Ok(adb.shell(&serial, "true").await.is_ok())
+}
+
 /// `disconnect_device` — `adb disconnect <serial>`.
 #[tauri::command]
 pub async fn disconnect_device(

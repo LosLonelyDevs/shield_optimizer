@@ -1,15 +1,17 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { AppUsage, RiskTier } from "$lib/types";
+  import type { AppUsage, RiskTier, Safety } from "$lib/types";
   import StateBadge from "$lib/components/StateBadge.svelte";
   import RamBadge from "$lib/components/RamBadge.svelte";
   import UsageBadge from "$lib/components/UsageBadge.svelte";
+  import RiskBadge from "$lib/components/RiskBadge.svelte";
 
   // One catalog-app table row, shared by the App List and the Optimize wizard.
   // Dumb on purpose: data in, an `actions` snippet for the per-tab buttons —
   // the row owns layout (name/desc/pkg, state+RAM+usage cluster, risk), never
   // behaviour. Whether a cue shows (`mb`, `usage`) is the caller's call; the
-  // badges already self-hide when their value is falsy.
+  // badges already self-hide when their value is falsy. The risk pill's
+  // mark-safe action only appears when the host passes `onToggleSafe`.
   let {
     name,
     description,
@@ -21,6 +23,10 @@
     usage,
     showUsage = true,
     risk,
+    safety,
+    overridden = false,
+    riskBusy = false,
+    onToggleSafe,
     rowClass,
     actions,
   }: {
@@ -34,6 +40,10 @@
     usage?: AppUsage;
     showUsage?: boolean;
     risk: RiskTier;
+    safety?: Safety;
+    overridden?: boolean;
+    riskBusy?: boolean;
+    onToggleSafe?: (pkg: string) => void;
     rowClass?: string;
     actions: Snippet;
   } = $props();
@@ -61,13 +71,23 @@
       <div class="cell-cue"><UsageBadge {usage} /></div>
     {/if}
   </td>
-  <td class={`risk center risk-${risk}`}>{risk.toUpperCase()}</td>
+  <td class="center risk-cell">
+    <RiskBadge
+      {pkg}
+      {name}
+      tier={risk}
+      {description}
+      {safety}
+      {overridden}
+      busy={riskBusy}
+      {onToggleSafe}
+    />
+  </td>
   {@render actions()}
 </tr>
 
 <style>
-  /* Risk colors (.risk-safe/-medium/-high/-advanced) are global, defined in
-     +layout.svelte, so they reach this scoped row. The table chrome (th/td
+  /* The risk pill + its colors live in RiskBadge. The table chrome (th/td
      borders, padding, .center) is owned by the host table; this row only
      styles the cells it fully owns. */
   td {
@@ -105,10 +125,9 @@
   .cell-cue {
     margin-top: 0.2rem;
   }
-  .risk {
-    font-family: ui-monospace, monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.04em;
+  .risk-cell {
+    overflow: visible;
+    white-space: nowrap;
   }
   .tag {
     font-size: 0.7rem;

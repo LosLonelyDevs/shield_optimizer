@@ -30,6 +30,11 @@ pub struct QuickApp {
     pub repo: Option<String>,
     /// Substring every candidate asset must contain (narrows multi-app releases).
     pub asset_match: Option<String>,
+    /// Pin to a specific release tag instead of `latest`. Required for
+    /// prerelease-only builds (GitHub's `releases/latest` never returns
+    /// prereleases). GitHub-source only.
+    #[serde(default)]
+    pub tag: Option<String>,
     /// Direct `.apk` URL for `source: "url"`, or a last-resort link otherwise.
     pub fallback_url: Option<String>,
 }
@@ -135,6 +140,15 @@ struct GitlabLink {
     direct_asset_url: Option<String>,
 }
 
+/// GitHub release endpoint: a pinned tag when the catalog asks for one
+/// (prereleases never surface via `latest`), otherwise the latest release.
+fn github_release_endpoint(repo: &str, tag: Option<&str>) -> String {
+    match tag {
+        Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
+        None => format!("https://api.github.com/repos/{repo}/releases/latest"),
+    }
+}
+
 /// Resolve the download URL for `app` given the device's ABI list.
 pub(crate) async fn resolve_url(
     client: &reqwest::Client,
@@ -151,11 +165,8 @@ pub(crate) async fn resolve_url(
                 .repo
                 .as_deref()
                 .ok_or_else(|| format!("{} is missing a repo", app.name))?;
-            let body = fetch_text(
-                client,
-                &format!("https://api.github.com/repos/{repo}/releases/latest"),
-            )
-            .await?;
+            let body =
+                fetch_text(client, &github_release_endpoint(repo, app.tag.as_deref())).await?;
             let release: GithubRelease = serde_json::from_str(&body)
                 .map_err(|e| format!("parse GitHub release for {repo}: {e}"))?;
             let assets: Vec<ReleaseAsset> = release
@@ -407,6 +418,7 @@ pub async fn setup_shizuku_impl(
             source: "github".to_string(),
             repo: Some("RikkaApps/Shizuku".to_string()),
             asset_match: None,
+            tag: None,
             fallback_url: None,
         };
         let abilist = adb
@@ -493,7 +505,8 @@ mod tests {
         assert!(apps.len() >= 4, "quick-install catalog looks thin");
         assert!(apps
             .iter()
-            .any(|a| a.package == "com.teamsmart.videomanager.tv"));
+            .any(|a| a.package == "io.gh.reisxd.tizentube.cobalt"));
+        assert!(apps.iter().any(|a| a.package == "dev.bikram.obtainx"));
         // Every entry needs a usable source.
         for a in &apps {
             match a.source.as_str() {
@@ -505,6 +518,32 @@ mod tests {
     }
 
     #[test]
+    fn matvt_is_pinned_to_its_prerelease_tag() {
+        // `releases/latest` never returns prereleases, so MATVT's v1.0.7-pre
+        // must carry a pinned tag or the install would silently regress to the
+        // older stable release.
+        let apps = super::super::loader::load_quick_apps();
+        let matvt = apps
+            .iter()
+            .find(|a| a.package == "io.github.virresh.matvt")
+            .expect("MATVT in catalog");
+        assert_eq!(matvt.tag.as_deref(), Some("v1.0.7-pre"));
+        assert_eq!(matvt.asset_match.as_deref(), Some("pre2"));
+    }
+
+    #[test]
+    fn github_endpoint_honors_pinned_tag() {
+        assert_eq!(
+            github_release_endpoint("virresh/matvt", Some("v1.0.7-pre")),
+            "https://api.github.com/repos/virresh/matvt/releases/tags/v1.0.7-pre"
+        );
+        assert_eq!(
+            github_release_endpoint("localsend/localsend", None),
+            "https://api.github.com/repos/localsend/localsend/releases/latest"
+        );
+    }
+
+    #[test]
     fn url_source_resolves_to_fallback() {
         let app = QuickApp {
             name: "AdGuard".into(),
@@ -513,6 +552,7 @@ mod tests {
             source: "url".into(),
             repo: None,
             asset_match: None,
+            tag: None,
             fallback_url: Some("https://agrd.io/tvapk".into()),
         };
         let url = select_url(&app, &[], &["arm64-v8a".into()]);
@@ -558,18 +598,18 @@ mod tests {
         use crate::commands::test_support::{state_with, MockAdb};
         let state = state_with(
             MockAdb::default()
-                .on_shell("pm list packages", "package:com.teamsmart.videomanager.tv"),
+                .on_shell("pm list packages", "package:io.gh.reisxd.tizentube.cobalt"),
         );
         let rows = list_quick_apps_impl(&state, "serial").await.unwrap();
-        let smarttube = rows
+        let tizentube = rows
             .iter()
-            .find(|r| r.app.package == "com.teamsmart.videomanager.tv")
-            .expect("SmartTube in catalog");
-        assert!(smarttube.installed, "SmartTube should read as installed");
-        let adguard = rows
+            .find(|r| r.app.package == "io.gh.reisxd.tizentube.cobalt")
+            .expect("TizenTube Cobalt in catalog");
+        assert!(tizentube.installed, "TizenTube should read as installed");
+        let flicky = rows
             .iter()
-            .find(|r| r.app.package == "com.adguard.android.tv")
-            .expect("AdGuard in catalog");
-        assert!(!adguard.installed, "AdGuard should read as not installed");
+            .find(|r| r.app.package == "app.flicky")
+            .expect("Flicky in catalog");
+        assert!(!flicky.installed, "Flicky should read as not installed");
     }
 }
