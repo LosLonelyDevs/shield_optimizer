@@ -5,7 +5,20 @@
   import type { Device, DeviceReport } from "$lib/types";
   import { deviceTypeLabel } from "$lib/types";
 
+  type RecentDevice = {
+    address: string;
+    name: string;
+    model: string;
+    device_type: Device["device_type"];
+    last_seen_at: number;
+  };
+
   let devices = $state<Device[]>([]);
+  let recentDevices = $state<RecentDevice[]>([]);
+  let recentBusyAddress = $state<string | null>(null);
+  let disconnectedRecentDevices = $derived(
+    recentDevices.filter((recent) => !devices.some((device) => device.serial === recent.address)),
+  );
 
   /// Sort priority: authorized first (status === "device"), then unauthorized
   /// (the user can act on them via the inline guidance), then offline. Tiebreak
@@ -62,8 +75,6 @@
       adbMissing = false;
       devices = await api.listDevices();
       rememberNetworkDevices();
-      // Detached: reconnect attempts must never delay the list paint.
-      void reviveMissingNetworkDevices();
     } catch (e) {
       error = String(e);
     } finally {
@@ -71,43 +82,125 @@
     }
   }
 
-  // The adb daemon forgets a network device the moment its TCP session dies
-  // (TV sleeps, Wi-Fi power save, router idle timeout) — the Shield just
-  // vanishes from `adb devices` and nothing ever reconnects it. Remember the
-  // network serials we've seen connected and quietly `adb connect` any that
-  // have gone missing on each refresh.
   const RECENT_NETWORK_KEY = "shieldopt.recentNetworkDevices";
+
+  function loadRecentDevices(): RecentDevice[] {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(RECENT_NETWORK_KEY) ?? "[]");
+      if (!Array.isArray(stored)) return [];
+
+      return stored
+        .flatMap((item): RecentDevice[] => {
+          // Migrate the previous string-only history without losing known IPs.
+          if (typeof item === "string" && item.trim()) {
+            return [{
+              address: item,
+              name: item,
+              model: "",
+              device_type: "unknown",
+              last_seen_at: 0,
+            }];
+          }
+          if (!item || typeof item !== "object") return [];
+
+          const value = item as Record<string, unknown>;
+          if (typeof value.address !== "string" || !value.address.trim()) return [];
+          const deviceType = value.device_type;
+          return [{
+            address: value.address,
+            name: typeof value.name === "string" && value.name.trim() ? value.name : value.address,
+            model: typeof value.model === "string" ? value.model : "",
+            device_type:
+              deviceType === "shield" || deviceType === "google_tv" ? deviceType : "unknown",
+            last_seen_at: typeof value.last_seen_at === "number" ? value.last_seen_at : 0,
+          }];
+        })
+        .sort((a, b) => b.last_seen_at - a.last_seen_at)
+        .slice(0, 8);
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRecentDevices() {
+    localStorage.setItem(RECENT_NETWORK_KEY, JSON.stringify(recentDevices));
+  }
 
   function rememberNetworkDevices() {
     const connected = devices
       .filter((d) => d.connection === "network" && d.status === "device")
-      .map((d) => d.serial);
+      .map((d): RecentDevice => ({
+        address: d.serial,
+        name: d.name,
+        model: d.model,
+        device_type: d.device_type,
+        last_seen_at: Date.now(),
+      }));
     if (connected.length === 0) return;
-    let prev: string[] = [];
-    try {
-      prev = JSON.parse(localStorage.getItem(RECENT_NETWORK_KEY) ?? "[]");
-    } catch {
-      // Corrupt entry — rebuild from what's connected now.
+
+    const merged = new Map<string, RecentDevice>();
+    for (const recent of [...connected, ...recentDevices]) {
+      if (!merged.has(recent.address)) merged.set(recent.address, recent);
     }
-    const merged = [...new Set([...connected, ...prev])].slice(0, 8);
-    localStorage.setItem(RECENT_NETWORK_KEY, JSON.stringify(merged));
+    recentDevices = [...merged.values()].slice(0, 8);
+    saveRecentDevices();
   }
 
-  async function reviveMissingNetworkDevices() {
-    let known: string[] = [];
-    try {
-      known = JSON.parse(localStorage.getItem(RECENT_NETWORK_KEY) ?? "[]");
-    } catch {
-      return;
-    }
+  async function reconnectRecentDevices(showStatus: boolean): Promise<number> {
     const present = new Set(devices.map((d) => d.serial));
-    const missing = known.filter((s) => !present.has(s));
-    if (missing.length === 0) return;
-    const results = await Promise.allSettled(missing.map((s) => api.connectDevice(s)));
-    if (results.some((r) => r.status === "fulfilled" && r.value.ok)) {
-      devices = await api.listDevices();
-      rememberNetworkDevices();
+    const missing = recentDevices.filter((recent) => !present.has(recent.address));
+    if (missing.length === 0) return 0;
+
+    if (showStatus) {
+      scanMessage = `Checking ${missing.length} recent device${missing.length === 1 ? "" : "s"} first…`;
     }
+    await Promise.allSettled(missing.map((recent) => api.connectDevice(recent.address)));
+
+    devices = await api.listDevices();
+    rememberNetworkDevices();
+    const reconnected = missing.filter((recent) =>
+      devices.some((device) => device.serial === recent.address),
+    ).length;
+    if (showStatus) {
+      scanMessage = reconnected > 0
+        ? `Reconnected ${reconnected} recent device${reconnected === 1 ? "" : "s"}.`
+        : "No recent devices responded.";
+    }
+    return reconnected;
+  }
+
+  async function refreshDevices(showStatus = true) {
+    await refresh();
+    if (adbMissing) return;
+
+    scanBusy = true;
+    try {
+      await reconnectRecentDevices(showStatus);
+    } finally {
+      scanBusy = false;
+    }
+  }
+
+  async function connectRecentDevice(recent: RecentDevice) {
+    recentBusyAddress = recent.address;
+    scanMessage = `Connecting to ${recent.address}…`;
+    try {
+      const result = await api.connectDevice(recent.address);
+      scanMessage = result.message.trim();
+      await refresh();
+    } catch (e) {
+      scanMessage = String(e);
+    } finally {
+      recentBusyAddress = null;
+    }
+  }
+
+  function lastSeenLabel(timestamp: number): string {
+    if (timestamp <= 0) return "Previously connected";
+    return `Last seen ${new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(timestamp)}`;
   }
 
   async function downloadAdb() {
@@ -117,9 +210,9 @@
       const r = await api.installAdb();
       installMessage = r.message;
       if (r.ok) {
-        await refresh();
+        await refreshDevices();
         if (!devices.some((d) => d.status === "device")) {
-          await scan();
+          await scan(false);
         }
       }
     } catch (e) {
@@ -147,10 +240,13 @@
     }
   }
 
-  async function scan() {
+  async function scan(checkRecent = true) {
     scanBusy = true;
-    scanMessage = "Scanning local network…";
     try {
+      if (checkRecent) {
+        await reconnectRecentDevices(true);
+      }
+      scanMessage = "Scanning local network…";
       const r = await api.scanNetwork();
       scanMessage = r.message;
       // Always refresh: even a "failed" connect can register the device with
@@ -194,7 +290,7 @@
     try {
       const r = await api.restartAdb();
       restartMessage = r.message;
-      await refresh();
+      await refreshDevices();
     } catch (e) {
       restartMessage = String(e);
     } finally {
@@ -215,14 +311,12 @@
     }
   }
 
-  // Best-effort discovery on boot: if no devices show up after the initial
-  // refresh and adb is available, kick off a scan so users with already-paired
-  // devices don't have to click anything. v1 behaved similarly.
   async function bootDiscovery() {
-    await refresh();
+    recentDevices = loadRecentDevices();
+    await refreshDevices(false);
     if (adbMissing) return;
     if (devices.some((d) => d.status === "device")) return;
-    await scan();
+    await scan(false);
   }
 
   onMount(bootDiscovery);
@@ -230,7 +324,7 @@
 
 <section class="header-row">
   <h1>Devices</h1>
-  <button onclick={refresh} disabled={loading}>
+  <button onclick={() => refreshDevices()} disabled={loading || scanBusy}>
     {loading ? "Refreshing…" : "Refresh"}
   </button>
 </section>
@@ -244,7 +338,7 @@
   <button class="primary" onclick={connect} disabled={connectBusy || !connectAddress.trim()}>
     {connectBusy ? "Connecting…" : "Connect IP"}
   </button>
-  <button onclick={scan} disabled={scanBusy || adbMissing} title="Scan the local /24 subnet for ADB-listening devices">
+  <button onclick={() => scan()} disabled={scanBusy || adbMissing} title="Scan the local /24 subnet for ADB-listening devices">
     {scanBusy ? "Scanning…" : "Scan Network"}
   </button>
   <button onclick={() => (pairOpen = !pairOpen)} disabled={adbMissing} title="Android 11+ PIN pairing flow">
@@ -425,6 +519,40 @@
   </ul>
 {/if}
 
+{#if !adbMissing && disconnectedRecentDevices.length > 0}
+  <section class="recent-devices">
+    <div class="recent-header">
+      <h2>Recent devices</h2>
+      <p class="muted small">Saved network devices are checked before each local-network scan.</p>
+    </div>
+    <ul class="device-list">
+      {#each disconnectedRecentDevices as recent (recent.address)}
+        <li class="device-row recent-device">
+          <div class="device-main">
+            <div class="device-name">
+              <span class="conn-tag">[NET]</span>
+              <span>{recent.name}</span>
+              <span class="status-tag offline">RECENT</span>
+            </div>
+            <div class="device-meta muted">
+              {deviceTypeLabel(recent.device_type)}
+              {#if recent.model}· {recent.model}{/if}
+              · {recent.address}
+              · {lastSeenLabel(recent.last_seen_at)}
+            </div>
+          </div>
+          <button
+            onclick={() => connectRecentDevice(recent)}
+            disabled={recentBusyAddress !== null || scanBusy}
+          >
+            {recentBusyAddress === recent.address ? "Connecting…" : "Connect"}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
+
 <style>
   .header-row {
     display: flex;
@@ -457,6 +585,23 @@
     list-style: none;
     padding: 0;
     margin: 0;
+  }
+  .recent-devices {
+    margin-top: 1.75rem;
+  }
+  .recent-header {
+    margin-bottom: 0.75rem;
+  }
+  .recent-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+  .recent-header p {
+    margin: 0.25rem 0 0;
+  }
+  .recent-device button {
+    flex-shrink: 0;
+    margin-left: 1rem;
   }
   .device-row {
     display: flex;

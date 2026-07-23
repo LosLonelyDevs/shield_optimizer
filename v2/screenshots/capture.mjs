@@ -20,6 +20,13 @@ const PORT = 1421;
 const BASE = `http://localhost:${PORT}`;
 const SERIAL = "192.168.1.42:5555";
 const DEVICE_URL = `${BASE}/devices/${encodeURIComponent(SERIAL)}`;
+const RECENT_DEVICE = {
+  address: "192.168.1.87:5555",
+  name: "Living Room TV",
+  model: "Chromecast with Google TV",
+  device_type: "google_tv",
+  last_seen_at: Date.UTC(2026, 5, 1, 18, 30),
+};
 
 // One output dir per theme. colorScheme drives prefers-color-scheme, which the
 // app's "Auto" theme follows.
@@ -156,6 +163,9 @@ async function main() {
         deviceScaleFactor: 2, // crisp retina PNGs
         colorScheme: scheme.name, // drives prefers-color-scheme → app "Auto"
       });
+      await context.addInitScript((recentDevice) => {
+        localStorage.setItem("shieldopt.recentNetworkDevices", JSON.stringify([recentDevice]));
+      }, RECENT_DEVICE);
       const page = await context.newPage();
 
       let n = 0;
