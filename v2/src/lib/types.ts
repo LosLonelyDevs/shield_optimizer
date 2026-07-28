@@ -176,6 +176,17 @@ export interface DiscoveredApk {
   name: string;
   size_bytes: number;
   package: string | null;
+  /// `versionCode` from the APK manifest — the integer used to compare against
+  /// the installed copy (Upgrade / Downgrade / Reinstall).
+  version_code: number | null;
+  /// `versionName` from the APK manifest — the human version string, display-only.
+  version_name: string | null;
+}
+
+/// The version of a package currently installed on the device.
+export interface InstalledVersion {
+  version_code: number | null;
+  version_name: string | null;
 }
 
 export interface BackupApkResult {
@@ -391,6 +402,11 @@ export interface QuickApp {
 
 export interface QuickAppRow extends QuickApp {
   installed: boolean;
+}
+
+export interface ShizukuStatus {
+  installed: boolean;
+  running: boolean;
 }
 
 export interface WriteResult {

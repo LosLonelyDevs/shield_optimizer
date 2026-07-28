@@ -311,12 +311,34 @@
     }
   }
 
+  const LAST_DEVICE_KEY = "shieldopt.lastDeviceSerial";
+  const BOOT_AUTOOPEN_KEY = "shieldopt.bootAutoOpened";
+
+  /// On the app's first load (not on later returns to this page), if the device
+  /// the user last worked on is connected and authorized, jump straight into it.
+  /// Guarded by a session flag so navigating back to "/" by hand doesn't bounce
+  /// the user into the device again.
+  function maybeAutoOpenLastDevice() {
+    if (typeof sessionStorage === "undefined") return;
+    if (sessionStorage.getItem(BOOT_AUTOOPEN_KEY)) return;
+    // Mark the attempt now — this must only ever fire on the true cold start.
+    sessionStorage.setItem(BOOT_AUTOOPEN_KEY, "1");
+    const last = localStorage.getItem(LAST_DEVICE_KEY);
+    if (!last) return;
+    const target = devices.find((d) => d.serial === last && d.status === "device");
+    if (target) goto(`/devices/${encodeURIComponent(target.serial)}`);
+  }
+
   async function bootDiscovery() {
     recentDevices = loadRecentDevices();
     await refreshDevices(false);
     if (adbMissing) return;
-    if (devices.some((d) => d.status === "device")) return;
-    await scan(false);
+    // Recent-device reconnect (in refreshDevices) already tried the last
+    // network device; only fall back to a subnet scan if nothing's connected.
+    if (!devices.some((d) => d.status === "device")) {
+      await scan(false);
+    }
+    maybeAutoOpenLastDevice();
   }
 
   onMount(bootDiscovery);

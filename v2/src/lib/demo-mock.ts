@@ -310,6 +310,10 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return apps;
     case "package_states":
       return packageStates((args.packages as string[]) ?? []);
+    case "installed_package_versions":
+      // Demo folder scan returns no APKs, so this is never really exercised;
+      // answer with an empty map so the Install-APK tab stays well-behaved.
+      return {};
     case "app_permission_state":
       return "granted";
     case "list_other_packages":
@@ -390,6 +394,8 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
         { name: "Aurora Store", package: "com.aurora.store", description: "Open-source Play Store client — install/update apps without a Google account.", source: "gitlab", repo: "AuroraOSS/AuroraStore", asset_match: null, tag: null, fallback_url: null, installed: false },
         { name: "LocalSend", package: "org.localsend.localsend_app", description: "AirDrop-style local file sharing between your PC, phone, and TV.", source: "github", repo: "localsend/localsend", asset_match: null, tag: null, fallback_url: null, installed: false },
       ];
+    case "shizuku_status":
+      return { installed: true, running: true };
     case "preview_apply":
       return {
         packages_to_disable: [

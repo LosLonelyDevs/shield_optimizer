@@ -190,6 +190,12 @@
     deviceErr = null;
     try {
       device = await api.deviceProfile(serial);
+      // Remember the device we're actively on so the next app launch can
+      // reconnect and reopen it. Keyed on serial (== ip:port for network
+      // devices) — exactly what the home page navigates back to.
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("shieldopt.lastDeviceSerial", serial);
+      }
     } catch (e) {
       deviceErr = String(e);
     }

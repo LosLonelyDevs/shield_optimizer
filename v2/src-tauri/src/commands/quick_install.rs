@@ -382,6 +382,38 @@ async fn shizuku_running(adb: &std::sync::Arc<dyn AdbDriver>, serial: &str) -> b
     false
 }
 
+/// Whether Shizuku is installed on the device and whether its service is
+/// currently live. Drives the Sideload tab's status dot without the user having
+/// to press "Install / Start" just to find out.
+#[derive(Serialize)]
+pub struct ShizukuStatus {
+    pub installed: bool,
+    pub running: bool,
+}
+
+/// `shizuku_status` — cheap probe of Shizuku's install + service state. Single
+/// shot (unlike `shizuku_running`'s post-start polling): the user asked "is it
+/// up right now", not "did a start I just triggered take".
+#[tauri::command]
+pub async fn shizuku_status(
+    state: State<'_, AppState>,
+    serial: String,
+) -> Result<ShizukuStatus, String> {
+    let adb = state.adb_snapshot().await;
+    let installed = adb
+        .shell(&serial, &format!("pm list packages {SHIZUKU_PKG}"))
+        .await
+        .map(|o| o.stdout.contains(SHIZUKU_PKG))
+        .unwrap_or(false);
+    let running = installed
+        && adb
+            .shell(&serial, "ps -A -o NAME")
+            .await
+            .map(|o| o.stdout.contains("shizuku_server"))
+            .unwrap_or(false);
+    Ok(ShizukuStatus { installed, running })
+}
+
 /// `setup_shizuku` — install Shizuku if it's missing, then start its service.
 /// Safe to re-run: an existing install is left alone and only the service is
 /// (re)started, which is what makes this usable as a plain "start it again

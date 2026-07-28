@@ -73,24 +73,70 @@ pub struct DiscoveredApk {
     /// Package id read from the APK's AndroidManifest.xml, when decodable.
     /// Lets the UI flag APKs that are already installed on the device.
     pub package: Option<String>,
+    /// `android:versionCode` from the manifest — the integer Android compares
+    /// for upgrade/downgrade decisions. Checked against the installed copy so
+    /// the UI can label a row Upgrade / Downgrade / Reinstall instead of a flat
+    /// "installed".
+    pub version_code: Option<i64>,
+    /// `android:versionName` — the human version string (e.g. "4.71.3"), for
+    /// display only.
+    pub version_name: Option<String>,
 }
 
-/// Read the `package` attribute from an APK's binary `AndroidManifest.xml`.
-/// Returns `None` if the file isn't a readable APK or the manifest can't be
-/// decoded — best-effort; the install flow doesn't depend on it.
-fn read_apk_package_id(apk_path: &std::path::Path) -> Option<String> {
-    let file = std::fs::File::open(apk_path).ok()?;
-    let mut zip = zip::ZipArchive::new(file).ok()?;
-    let mut manifest = zip.by_name("AndroidManifest.xml").ok()?;
+/// Package id + version fields decoded from an APK's `AndroidManifest.xml`.
+struct ApkManifestInfo {
+    package: Option<String>,
+    version_code: Option<i64>,
+    version_name: Option<String>,
+}
+
+/// Read `package`, `versionCode`, and `versionName` from an APK's binary
+/// `AndroidManifest.xml`. Best-effort: any field that can't be decoded comes
+/// back `None`, and a file that isn't a readable APK yields an all-`None`
+/// result — the install flow doesn't depend on it.
+fn read_apk_manifest(apk_path: &std::path::Path) -> ApkManifestInfo {
+    let empty = ApkManifestInfo {
+        package: None,
+        version_code: None,
+        version_name: None,
+    };
+    let Ok(file) = std::fs::File::open(apk_path) else {
+        return empty;
+    };
+    let Ok(mut zip) = zip::ZipArchive::new(file) else {
+        return empty;
+    };
+    let Ok(mut manifest) = zip.by_name("AndroidManifest.xml") else {
+        return empty;
+    };
     let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut manifest, &mut bytes).ok()?;
-    let doc = axmldecoder::parse(&bytes).ok()?;
-    if let Some(axmldecoder::Node::Element(root)) = doc.get_root() {
-        if root.get_tag() == "manifest" {
-            return root.get_attributes().get("package").cloned();
-        }
+    if std::io::Read::read_to_end(&mut manifest, &mut bytes).is_err() {
+        return empty;
     }
-    None
+    let Ok(doc) = axmldecoder::parse(&bytes) else {
+        return empty;
+    };
+    let Some(axmldecoder::Node::Element(root)) = doc.get_root() else {
+        return empty;
+    };
+    if root.get_tag() != "manifest" {
+        return empty;
+    }
+    let attrs = root.get_attributes();
+    // Namespaced attributes decode as `android:versionCode` when the manifest
+    // keeps attribute-name strings, or the bare `versionCode` when they've been
+    // stripped to resource ids — check both.
+    let attr = |name: &str| -> Option<String> {
+        attrs
+            .get(name)
+            .or_else(|| attrs.get(format!("android:{name}").as_str()))
+            .cloned()
+    };
+    ApkManifestInfo {
+        package: attr("package"),
+        version_code: attr("versionCode").and_then(|v| v.parse::<i64>().ok()),
+        version_name: attr("versionName").filter(|v| !v.is_empty()),
+    }
 }
 
 /// `list_apks_in_folder` — scan `folder` for `.apk` files. Used by the
@@ -126,12 +172,14 @@ pub async fn list_apks_in_folder(folder: String) -> Result<Vec<DiscoveredApk>, S
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        let package = read_apk_package_id(&path);
+        let info = read_apk_manifest(&path);
         out.push(DiscoveredApk {
             path: path.display().to_string(),
             name,
             size_bytes: metadata.len(),
-            package,
+            package: info.package,
+            version_code: info.version_code,
+            version_name: info.version_name,
         });
         if out.len() >= 50 {
             break;

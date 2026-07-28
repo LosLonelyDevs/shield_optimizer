@@ -87,6 +87,97 @@ pub async fn package_states(
     Ok(out)
 }
 
+/// The version of an installed package, read from `dumpsys package <pkg>`.
+/// `version_code` is what Android compares for upgrade/downgrade; `version_name`
+/// is the human string shown in the UI.
+#[derive(Serialize)]
+pub struct InstalledVersion {
+    pub version_code: Option<i64>,
+    pub version_name: Option<String>,
+}
+
+/// `installed_package_versions` — for each package in `packages`, the version
+/// currently installed on the device (absent from the map when not installed).
+/// Powers the Install-APK tab's Upgrade / Downgrade / Reinstall labelling: the
+/// picked APK's manifest version is compared against what's actually on the box.
+///
+/// One `dumpsys package <pkg>` per package, run in bounded-concurrency batches
+/// so a folder full of installed APKs doesn't spawn dozens of shells at once.
+#[tauri::command]
+pub async fn installed_package_versions(
+    state: State<'_, AppState>,
+    serial: String,
+    packages: Vec<String>,
+) -> Result<HashMap<String, InstalledVersion>, String> {
+    installed_package_versions_impl(state.inner(), &serial, &packages).await
+}
+
+pub async fn installed_package_versions_impl(
+    state: &AppState,
+    serial: &str,
+    packages: &[String],
+) -> Result<HashMap<String, InstalledVersion>, String> {
+    /// Simultaneous `dumpsys package` calls to keep in flight.
+    const CONCURRENCY: usize = 8;
+
+    let adb = state.adb_snapshot().await;
+    // Skip anything that isn't a well-formed package id before it reaches the
+    // shell — this list originates from APK manifests, not `pm list`.
+    let valid: Vec<&String> = packages
+        .iter()
+        .filter(|p| is_valid_package_name(p))
+        .collect();
+
+    let mut out = HashMap::new();
+    for chunk in valid.chunks(CONCURRENCY) {
+        let futs = chunk.iter().map(|&pkg| {
+            let adb = adb.clone();
+            async move {
+                let text = adb
+                    .shell(serial, &format!("dumpsys package {pkg}"))
+                    .await
+                    .map(|o| o.stdout)
+                    .unwrap_or_default();
+                (pkg.clone(), text)
+            }
+        });
+        for (pkg, text) in futures_util::future::join_all(futs).await {
+            let version_code = parse_dumpsys_version_code(&text);
+            let version_name = parse_dumpsys_version_name(&text);
+            // Report only packages that are actually present — an absent package
+            // yields no version fields (dumpsys prints "Unable to find …").
+            if version_code.is_some() || version_name.is_some() {
+                out.insert(
+                    pkg,
+                    InstalledVersion {
+                        version_code,
+                        version_name,
+                    },
+                );
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// First `versionCode=<n>` in `dumpsys package` output (the primary package
+/// block lists it before any secondary users). Ignores the trailing
+/// ` minSdk=… targetSdk=…` on the same line.
+fn parse_dumpsys_version_code(dumpsys: &str) -> Option<i64> {
+    dumpsys.lines().find_map(|l| {
+        let rest = l.trim().strip_prefix("versionCode=")?;
+        rest.split_whitespace().next()?.parse::<i64>().ok()
+    })
+}
+
+/// First `versionName=<v>` in `dumpsys package` output.
+fn parse_dumpsys_version_name(dumpsys: &str) -> Option<String> {
+    dumpsys.lines().find_map(|l| {
+        let v = l.trim().strip_prefix("versionName=")?.trim();
+        (!v.is_empty()).then(|| v.to_string())
+    })
+}
+
 #[derive(Serialize)]
 pub struct OtherPackage {
     pub package: String,
@@ -676,6 +767,44 @@ mod tests {
         assert!(!is_first_party_package("air.com.shirogames.evoland12"));
         // Not fooled by a prefix appearing mid-string.
         assert!(!is_first_party_package("org.evil.com.google.fake"));
+    }
+
+    #[test]
+    fn parses_dumpsys_version_fields() {
+        let dump = "  Package [com.enai.launcher] (abc123):\n\
+                     versionCode=470002 minSdk=22 targetSdk=30\n\
+                     versionName=4.70.2\n";
+        assert_eq!(parse_dumpsys_version_code(dump), Some(470002));
+        assert_eq!(parse_dumpsys_version_name(dump).as_deref(), Some("4.70.2"));
+        assert_eq!(parse_dumpsys_version_code("no version here"), None);
+        assert_eq!(parse_dumpsys_version_name("no version here"), None);
+    }
+
+    #[tokio::test]
+    async fn installed_package_versions_reports_installed_only() {
+        use crate::commands::test_support::{state_with, MockAdb};
+
+        let dump = "  Package [com.installed.app] (x):\n\
+                     versionCode=12345 minSdk=21 targetSdk=33\n\
+                     versionName=1.2.3\n";
+        // Key the fixture to the installed id so the absent package falls through
+        // to the mock's empty default reply and is omitted from the result.
+        let state =
+            state_with(MockAdb::default().on_shell("dumpsys package com.installed.app", dump));
+        let map = installed_package_versions_impl(
+            &state,
+            "serial",
+            &[
+                "com.installed.app".to_string(),
+                "com.absent.app".to_string(),
+            ],
+        )
+        .await
+        .unwrap();
+        let v = map.get("com.installed.app").expect("installed pkg present");
+        assert_eq!(v.version_code, Some(12345));
+        assert_eq!(v.version_name.as_deref(), Some("1.2.3"));
+        assert!(!map.contains_key("com.absent.app"));
     }
 
     #[test]

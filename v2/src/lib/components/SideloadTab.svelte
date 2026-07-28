@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { api } from "$lib/api";
-  import type { DiscoveredApk, QuickAppRow } from "$lib/types";
+  import type { DiscoveredApk, InstalledVersion, QuickAppRow, ShizukuStatus } from "$lib/types";
 
   let { serial }: { serial: string } = $props();
 
@@ -23,6 +23,10 @@
   /// package id → state, for the discovered APKs, so each row can say whether
   /// it's already installed on this device.
   let apkInstallState = $state<Record<string, "enabled" | "disabled" | "missing">>({});
+  /// package id → the version currently installed on the device, for packages
+  /// that are installed. Compared against the APK's own version so a row can say
+  /// Upgrade / Downgrade / Reinstall instead of a flat "installed".
+  let apkInstalledVersions = $state<Record<string, InstalledVersion>>({});
 
   // Quick-install catalog (arch-aware auto-download).
   let quickApps = $state<QuickAppRow[]>([]);
@@ -34,6 +38,21 @@
   let shizukuBusy = $state(false);
   let shizukuMsg = $state("");
   let shizukuOk = $state(false);
+  // Live install/running state for the status dot. null until the first probe
+  // (or if a probe fails) — rendered as "unknown" rather than a false negative.
+  let shizukuStatus = $state<ShizukuStatus | null>(null);
+  let shizukuCheckBusy = $state(false);
+  let shizukuStatusLabel = $derived(
+    shizukuStatus === null
+      ? shizukuCheckBusy
+        ? "Checking…"
+        : "Status unknown"
+      : shizukuStatus.running
+        ? "Service running"
+        : shizukuStatus.installed
+          ? "Installed · service stopped"
+          : "Not installed",
+  );
 
   async function pickAndInstallApk() {
     const selected = await openDialog({
@@ -65,13 +84,27 @@
     try {
       discoveredApks = await api.listApksInFolder(folder);
       discoveredFolder = folder;
-      const pkgs = discoveredApks.map((a) => a.package).filter((p): p is string => !!p);
-      apkInstallState = pkgs.length ? await api.packageStates(serial, pkgs) : {};
+      await refreshInstallState();
     } catch (e) {
       sideloadResult = `Scan failed: ${e}`;
     } finally {
       discoveryBusy = false;
     }
+  }
+
+  /// Re-query install state + installed versions for the currently discovered
+  /// APKs, without re-listing the folder. Run on scan and again after a
+  /// successful install so a row's chip reflects the new version right away.
+  async function refreshInstallState() {
+    const pkgs = discoveredApks.map((a) => a.package).filter((p): p is string => !!p);
+    apkInstallState = pkgs.length ? await api.packageStates(serial, pkgs) : {};
+    // Versions only matter for packages actually on the device.
+    const installedPkgs = pkgs.filter(
+      (p) => apkInstallState[p] === "enabled" || apkInstallState[p] === "disabled",
+    );
+    apkInstalledVersions = installedPkgs.length
+      ? await api.installedPackageVersions(serial, installedPkgs)
+      : {};
   }
 
   async function installApkPath(path: string) {
@@ -88,6 +121,15 @@
         ? "Installed."
         : installFailureSummary(r.message);
       sideloadHint = r.hint;
+      // Refresh so the row's chip flips to the newly-installed version (best
+      // effort — a failure here shouldn't clobber the success message).
+      if (r.ok && discoveredFolder) {
+        try {
+          await refreshInstallState();
+        } catch {
+          // Keep the "Installed." result even if the re-query fails.
+        }
+      }
     } catch (e) {
       sideloadResult = String(e);
     } finally {
@@ -107,6 +149,55 @@
       return `Install failed (${m[0]}).`;
     }
     return "Install failed.";
+  }
+
+  /// The install status of one discovered APK, comparing its manifest version
+  /// against what's installed on the device. Drives the row's chip and its
+  /// action-button label. `kind` doubles as the chip's CSS class.
+  ///   none      — not installed (or package unknown): plain "Install"
+  ///   installed — installed but versions can't be compared
+  ///   reinstall — same version already installed
+  ///   upgrade   — the APK is newer than the installed copy
+  ///   downgrade — the APK is older than the installed copy
+  function apkStatus(apk: DiscoveredApk): {
+    kind: "none" | "installed" | "reinstall" | "upgrade" | "downgrade";
+    disabled: boolean;
+    label: string;
+    button: string;
+  } {
+    const pkg = apk.package;
+    const state = pkg ? apkInstallState[pkg] : undefined;
+    if (!pkg || (state !== "enabled" && state !== "disabled")) {
+      return { kind: "none", disabled: false, label: "", button: "Install" };
+    }
+    const disabled = state === "disabled";
+    const suffix = disabled ? " (disabled)" : "";
+    const dev = apkInstalledVersions[pkg];
+    const apkCode = apk.version_code;
+    const devCode = dev?.version_code ?? null;
+
+    // Can't compare (either side's versionCode unknown) → flat installed chip.
+    if (apkCode == null || devCode == null) {
+      return { kind: "installed", disabled, label: `INSTALLED${suffix}`, button: "Reinstall" };
+    }
+
+    const from = dev?.version_name;
+    const to = apk.version_name;
+    const arrow = from && to ? ` ${from} → ${to}` : "";
+
+    if (apkCode > devCode) {
+      return { kind: "upgrade", disabled, label: `UPGRADE${arrow}${suffix}`, button: "Upgrade" };
+    }
+    if (apkCode < devCode) {
+      return { kind: "downgrade", disabled, label: `DOWNGRADE${arrow}${suffix}`, button: "Reinstall" };
+    }
+    const sameVer = to ?? from;
+    return {
+      kind: "reinstall",
+      disabled,
+      label: `INSTALLED${sameVer ? ` · v${sameVer}` : ""}${suffix}`,
+      button: "Reinstall",
+    };
   }
 
   function formatBytes(n: number): string {
@@ -150,6 +241,7 @@
       shizukuOk = r.ok;
       shizukuMsg = r.message;
       await loadQuickApps();
+      await checkShizuku();
     } catch (e) {
       shizukuMsg = String(e);
     } finally {
@@ -157,10 +249,25 @@
     }
   }
 
+  /// Probe whether Shizuku is installed and its service is live — drives the
+  /// status dot. Best-effort: a failed probe leaves the dot in the "unknown"
+  /// state rather than reporting a false "stopped".
+  async function checkShizuku() {
+    shizukuCheckBusy = true;
+    try {
+      shizukuStatus = await api.shizukuStatus(serial);
+    } catch {
+      shizukuStatus = null;
+    } finally {
+      shizukuCheckBusy = false;
+    }
+  }
+
   onMount(() => {
     const last = localStorage.getItem("shieldopt.lastApkFolder");
     if (last) scanApkFolder(last);
     loadQuickApps();
+    checkShizuku();
   });
 </script>
 
@@ -188,6 +295,7 @@
     </div>
     <ul class="apk-list">
       {#each discoveredApks as apk (apk.path)}
+        {@const status = apkStatus(apk)}
         <li>
           <div class="apk-row">
             <div class="apk-meta">
@@ -196,10 +304,14 @@
                 {formatBytes(apk.size_bytes)}
                 {#if apk.package}
                   · {apk.package}
-                  {#if apkInstallState[apk.package] === "enabled"}
-                    <span class="tag installed">INSTALLED</span>
-                  {:else if apkInstallState[apk.package] === "disabled"}
-                    <span class="tag disabled">INSTALLED (disabled)</span>
+                  {#if status.kind !== "none"}
+                    <span
+                      class="tag"
+                      class:installed={status.kind === "installed"}
+                      class:reinstall={status.kind === "reinstall"}
+                      class:upgrade={status.kind === "upgrade"}
+                      class:downgrade={status.kind === "downgrade"}
+                      class:is-disabled={status.disabled}>{status.label}</span>
                   {/if}
                 {/if}
               </div>
@@ -209,7 +321,7 @@
               onclick={() => installApkPath(apk.path)}
               disabled={sideloadBusy !== null}
             >
-              {sideloadBusy === apk.path ? "Installing…" : "Install"}
+              {sideloadBusy === apk.path ? "Installing…" : status.button}
             </button>
           </div>
           {#if sideloadResultPath === apk.path && sideloadResult}
@@ -236,7 +348,26 @@
 <div class="card section-card">
   <div class="shizuku-row">
     <div>
-      <h2>Shizuku</h2>
+      <div class="shizuku-header">
+        <h2>Shizuku</h2>
+        <span
+          class="status-dot"
+          class:running={shizukuStatus?.running}
+          class:stopped={!!shizukuStatus && shizukuStatus.installed && !shizukuStatus.running}
+          class:checking={shizukuCheckBusy}
+          aria-hidden="true"
+        ></span>
+        <span class="shizuku-status muted small">{shizukuStatusLabel}</span>
+        <button
+          class="icon-check"
+          onclick={checkShizuku}
+          disabled={shizukuCheckBusy}
+          title="Check whether Shizuku's service is running"
+          aria-label="Check Shizuku status"
+        >
+          {shizukuCheckBusy ? "…" : "⟳"}
+        </button>
+      </div>
       <div class="muted small">
         Installs Shizuku if it's missing, then starts its service so other apps can use
         elevated ADB permissions — no root, and no pairing code (Android TV never shows
@@ -334,8 +465,12 @@
     border-radius: 4px;
     letter-spacing: 0.04em;
   }
-  .tag.installed { background: var(--ok-surface); color: var(--ok); }
-  .tag.disabled { background: var(--warn-surface-2); color: var(--warn); }
+  .tag.installed,
+  .tag.reinstall { background: var(--ok-surface); color: var(--ok); }
+  .tag.upgrade { background: var(--accent-glow); color: var(--accent); }
+  .tag.downgrade { background: var(--warn-surface-2); color: var(--warn); }
+  /* A disabled install is still installed — keep the kind's color but mute it. */
+  .tag.is-disabled { opacity: 0.6; }
   code {
     background: var(--bg-inset);
     border: 1px solid var(--border);
@@ -392,10 +527,42 @@
     justify-content: space-between;
     gap: 1rem;
   }
-  .shizuku-row h2 {
+  .shizuku-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-bottom: 0.3rem;
   }
-  .shizuku-row button {
+  .shizuku-header h2 {
+    margin: 0;
+  }
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    /* Default (not installed / unknown): muted. */
+    background: var(--fg-muted);
+  }
+  .status-dot.stopped {
+    background: var(--warn);
+  }
+  .status-dot.running {
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+  }
+  .status-dot.checking {
+    opacity: 0.5;
+  }
+  .shizuku-status {
+    font-size: 0.8rem;
+  }
+  .icon-check {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .shizuku-row > button {
     white-space: nowrap;
     flex-shrink: 0;
   }

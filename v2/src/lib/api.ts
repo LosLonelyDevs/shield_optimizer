@@ -19,6 +19,7 @@ import type {
   DeviceReport,
   DeviceType,
   DiscoveredApk,
+  InstalledVersion,
   DisplayReport,
   DisplayScalePreset,
   DisplayScaleResult,
@@ -47,6 +48,7 @@ import type {
   RestartResult,
   Safety,
   ScanResult,
+  ShizukuStatus,
   ScreenshotResult,
   SendTextResult,
   SetLauncherResult,
@@ -134,6 +136,13 @@ export const api = {
       "package_states",
       { serial, packages },
     ),
+  /// Versions of the given packages currently installed on the device. Packages
+  /// that aren't installed are omitted from the returned map.
+  installedPackageVersions: (serial: string, packages: string[]) =>
+    invoke<Record<string, InstalledVersion>>("installed_package_versions", {
+      serial,
+      packages,
+    }),
   appPermissionState: (serial: string, pkg: string, permission: string) =>
     invoke<"granted" | "revoked" | "missing">("app_permission_state", {
       serial,
@@ -288,6 +297,8 @@ export const api = {
     invoke<ActionResult>("set_play_protect", { serial, enabled }),
   setupShizuku: (serial: string) =>
     invoke<ActionResult>("setup_shizuku", { serial }),
+  shizukuStatus: (serial: string) =>
+    invoke<ShizukuStatus>("shizuku_status", { serial }),
 
   // Settings pinned to survive a reboot.
   listBootTweaks: (serial: string) =>
