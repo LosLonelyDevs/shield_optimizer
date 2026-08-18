@@ -316,14 +316,26 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       return {};
     case "app_permission_state":
       return "granted";
-    case "list_other_packages":
+    case "list_installed_packages":
+      // Everything on the device — the curated catalog (bar what isn't
+      // installed) plus the long tail. `catalog` is what the App List's Kind
+      // filter splits on, so both halves have to be present here.
       return [
-        { package: "com.teamsmart.videomanager.tv", system: false, enabled: true, name: "SmartTube" },
-        { package: "ca.devmesh.overseerrtv", system: false, enabled: true, name: "Overseerr (TV)" },
-        { package: "org.fdroid.fdroid", system: false, enabled: true, name: "F-Droid" },
-        { package: "com.android.vending", system: true, enabled: true, name: null },
-        { package: "com.android.providers.media", system: true, enabled: true, name: null },
-        { package: "com.nvidia.ota", system: true, enabled: false, name: null },
+        ...apps
+          .filter((a) => !MISSING.has(a.package))
+          .map((a) => ({
+            package: a.package,
+            system: true,
+            enabled: !DISABLED.has(a.package),
+            name: a.name,
+            catalog: true,
+          })),
+        { package: "com.teamsmart.videomanager.tv", system: false, enabled: true, name: "SmartTube", catalog: false },
+        { package: "ca.devmesh.overseerrtv", system: false, enabled: true, name: "Overseerr (TV)", catalog: false },
+        { package: "org.fdroid.fdroid", system: false, enabled: true, name: "F-Droid", catalog: false },
+        { package: "com.android.vending", system: true, enabled: true, name: null, catalog: false },
+        { package: "com.android.providers.media", system: true, enabled: true, name: null, catalog: false },
+        { package: "com.nvidia.ota", system: true, enabled: false, name: null, catalog: false },
       ];
     case "app_memory_map":
       return {
@@ -334,10 +346,14 @@ function handle(cmd: string, args: Record<string, unknown>): unknown {
       };
     case "app_usage_map":
       return {
-        "com.netflix.ninja": { last_used: "2026-06-05 20:10:00", launch_count: 412 },
-        "com.teamsmart.videomanager.tv": { last_used: "2026-06-04 21:30:00", launch_count: 88 },
-        "com.hulu.plus": { last_used: "2026-03-12 19:02:00", launch_count: 4 },
-        "com.showtime.standalone": { last_used: null, launch_count: 0 },
+        // ~92 days of uptime, so "no record" is long enough to mean unused.
+        window_secs: 7_920_000,
+        entries: {
+          "com.netflix.ninja": { last_used: "2026-06-05 20:10:00", launch_count: 412 },
+          "com.teamsmart.videomanager.tv": { last_used: "2026-06-04 21:30:00", launch_count: 88 },
+          "com.hulu.plus": { last_used: "2026-03-12 19:02:00", launch_count: 4 },
+          "com.showtime.standalone": { last_used: null, launch_count: 0 },
+        },
       };
     case "safety_info":
       return demoSafety[args.package as string] ?? { kind: "safe" };

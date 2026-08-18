@@ -6,15 +6,18 @@
 
   let { serial }: { serial: string } = $props();
 
+  type InstallOutcome = { ok: boolean; message: string; hint: string | null };
+
   /// Path of the APK currently installing (null when idle) — per-path so a
   /// multi-APK list only shows the spinner on the row actually installing.
   let sideloadBusy = $state<string | null>(null);
-  let sideloadResult = $state<string>("");
-  let sideloadHint = $state<string | null>(null);
-  /// Path the current install result belongs to (so it renders under that
-  /// row), whether it succeeded, and the raw adb output for the details line.
-  let sideloadResultPath = $state<string | null>(null);
-  let sideloadOk = $state(false);
+  /// Install outcome per APK path. Keyed rather than single-valued so an
+  /// Install-all run leaves every row's result on screen, not just the last.
+  let installResults = $state<Record<string, InstallOutcome>>({});
+  /// Path of the most recent install, so a file picked outside the currently
+  /// listed folder still gets its result rendered (below the list).
+  let lastInstalledPath = $state<string | null>(null);
+  let scanError = $state<string | null>(null);
   // Auto-discovered APK list — re-scanned whenever the user picks a folder
   // (or after a successful install in case files were added/removed).
   let discoveredApks = $state<DiscoveredApk[]>([]);
@@ -27,6 +30,23 @@
   /// that are installed. Compared against the APK's own version so a row can say
   /// Upgrade / Downgrade / Reinstall instead of a flat "installed".
   let apkInstalledVersions = $state<Record<string, InstalledVersion>>({});
+
+  // Install-all state: runs the discovered APKs one at a time (adb install is
+  // not safely concurrent against a single device) with a stop between files.
+  let batchRunning = $state(false);
+  let batchCancel = $state(false);
+  let batchDone = $state(0);
+  let batchTotal = $state(0);
+  let batchSummary = $state<string | null>(null);
+  let batchOk = $state(false);
+  let busy = $derived(sideloadBusy !== null || batchRunning);
+  /// The result of a one-off install whose file isn't in the listed folder —
+  /// it has no row to render under, so it shows below the list instead.
+  let looseResult = $derived(
+    lastInstalledPath && !discoveredApks.some((a) => a.path === lastInstalledPath)
+      ? (installResults[lastInstalledPath] ?? null)
+      : null,
+  );
 
   // Quick-install catalog (arch-aware auto-download).
   let quickApps = $state<QuickAppRow[]>([]);
@@ -81,12 +101,14 @@
 
   async function scanApkFolder(folder: string) {
     discoveryBusy = true;
+    scanError = null;
     try {
       discoveredApks = await api.listApksInFolder(folder);
       discoveredFolder = folder;
+      batchSummary = null;
       await refreshInstallState();
     } catch (e) {
-      sideloadResult = `Scan failed: ${e}`;
+      scanError = `Scan failed: ${e}`;
     } finally {
       discoveryBusy = false;
     }
@@ -107,33 +129,78 @@
       : {};
   }
 
-  async function installApkPath(path: string) {
+  /// Install one APK. `refresh` is turned off by the Install-all loop, which
+  /// re-queries once at the end instead of after every file.
+  async function installApkPath(path: string, refresh = true): Promise<boolean> {
     sideloadBusy = path;
-    sideloadResultPath = path;
-    sideloadOk = false;
-    sideloadResult = "";
-    sideloadHint = null;
+    lastInstalledPath = path;
+    delete installResults[path];
+    // A single install invalidates the previous run's tally.
+    if (!batchRunning) batchSummary = null;
     try {
       const r = await api.installApk(serial, path, true);
-      sideloadOk = r.ok;
       // Friendly summary; the raw adb output is kept for the details line.
-      sideloadResult = r.ok
-        ? "Installed."
-        : installFailureSummary(r.message);
-      sideloadHint = r.hint;
+      installResults[path] = {
+        ok: r.ok,
+        message: r.ok ? "Installed." : installFailureSummary(r.message),
+        hint: r.hint,
+      };
       // Refresh so the row's chip flips to the newly-installed version (best
       // effort — a failure here shouldn't clobber the success message).
-      if (r.ok && discoveredFolder) {
+      if (refresh && r.ok && discoveredFolder) {
         try {
           await refreshInstallState();
         } catch {
           // Keep the "Installed." result even if the re-query fails.
         }
       }
+      return r.ok;
     } catch (e) {
-      sideloadResult = String(e);
+      installResults[path] = { ok: false, message: String(e), hint: null };
+      return false;
     } finally {
       sideloadBusy = null;
+    }
+  }
+
+  /// Install every discovered APK, in list order, one at a time. Each row keeps
+  /// its own result; the run-level tally lands in `batchSummary`.
+  async function installAll() {
+    const targets = discoveredApks.map((a) => a.path);
+    if (targets.length === 0 || batchRunning) return;
+    batchRunning = true;
+    batchCancel = false;
+    batchDone = 0;
+    batchTotal = targets.length;
+    batchSummary = null;
+    installResults = {};
+    let ok = 0;
+    let failed = 0;
+    try {
+      for (const path of targets) {
+        if (batchCancel) break;
+        if (await installApkPath(path, false)) ok++;
+        else failed++;
+        batchDone++;
+      }
+      if (ok > 0) {
+        try {
+          await refreshInstallState();
+        } catch {
+          // Keep the batch results even if the re-query fails.
+        }
+      }
+      // Stopping early isn't a failure — only real install errors mark it bad.
+      const skipped = batchTotal - batchDone;
+      batchOk = failed === 0;
+      batchSummary =
+        `Installed ${ok} of ${batchTotal}` +
+        (failed > 0 ? ` · ${failed} failed` : "") +
+        (skipped > 0 ? ` · ${skipped} skipped` : "") +
+        ".";
+    } finally {
+      batchRunning = false;
+      batchCancel = false;
     }
   }
 
@@ -156,7 +223,7 @@
   /// action-button label. `kind` doubles as the chip's CSS class.
   ///   none      — not installed (or package unknown): plain "Install"
   ///   installed — installed but versions can't be compared
-  ///   reinstall — same version already installed
+  ///   reinstall — same versionCode already installed
   ///   upgrade   — the APK is newer than the installed copy
   ///   downgrade — the APK is older than the installed copy
   function apkStatus(apk: DiscoveredApk): {
@@ -191,11 +258,16 @@
     if (apkCode < devCode) {
       return { kind: "downgrade", disabled, label: `DOWNGRADE${arrow}${suffix}`, button: "Reinstall" };
     }
-    const sameVer = to ?? from;
+    // Equal versionCode. The chip describes the device, so the version it names
+    // is always the device's — never the APK's. A build that bumps versionName
+    // without bumping versionCode lands here with the two names differing, so
+    // name both rather than passing the APK's off as what's installed.
+    const devVer = from ? ` · v${from}` : "";
+    const apkVer = to && to !== from ? ` · APK v${to}` : "";
     return {
       kind: "reinstall",
       disabled,
-      label: `INSTALLED${sameVer ? ` · v${sameVer}` : ""}${suffix}`,
+      label: `INSTALLED${devVer}${apkVer}${suffix}`,
       button: "Reinstall",
     };
   }
@@ -276,11 +348,11 @@
   <div class="card-header">
     <h2>Install APK</h2>
     <div class="header-actions">
-      <button onclick={pickApkFolder} disabled={sideloadBusy !== null || discoveryBusy}>
+      <button onclick={pickApkFolder} disabled={busy || discoveryBusy}>
         {discoveryBusy ? "Scanning…" : "Choose folder…"}
       </button>
-      <button class="primary" onclick={pickAndInstallApk} disabled={sideloadBusy !== null}>
-        {sideloadBusy !== null ? "Installing…" : "Pick file…"}
+      <button class="primary" onclick={pickAndInstallApk} disabled={busy}>
+        {sideloadBusy !== null && !batchRunning ? "Installing…" : "Pick file…"}
       </button>
     </div>
   </div>
@@ -290,8 +362,24 @@
   </p>
 
   {#if discoveredFolder && discoveredApks.length > 0}
-    <div class="apk-folder muted small mono">
-      {discoveredFolder} — {discoveredApks.length} APK{discoveredApks.length === 1 ? "" : "s"} found
+    <div class="apk-folder-row">
+      <div class="apk-folder muted small mono">
+        {discoveredFolder} — {discoveredApks.length} APK{discoveredApks.length === 1 ? "" : "s"} found
+      </div>
+      {#if discoveredApks.length > 1}
+        <div class="batch-actions">
+          <button class="small-action primary" onclick={installAll} disabled={busy || discoveryBusy}>
+            {batchRunning
+              ? `Installing ${Math.min(batchDone + 1, batchTotal)}/${batchTotal}…`
+              : `Install all (${discoveredApks.length})`}
+          </button>
+          {#if batchRunning}
+            <button class="small-action" onclick={() => (batchCancel = true)} disabled={batchCancel}>
+              {batchCancel ? "Stopping…" : "Stop"}
+            </button>
+          {/if}
+        </div>
+      {/if}
     </div>
     <ul class="apk-list">
       {#each discoveredApks as apk (apk.path)}
@@ -319,28 +407,38 @@
             <button
               class="small-action primary"
               onclick={() => installApkPath(apk.path)}
-              disabled={sideloadBusy !== null}
+              disabled={busy}
             >
               {sideloadBusy === apk.path ? "Installing…" : status.button}
             </button>
           </div>
-          {#if sideloadResultPath === apk.path && sideloadResult}
-            <div class="install-result" class:ok={sideloadOk} class:bad={!sideloadOk}>
-              <span>{sideloadOk ? "✓" : "✕"} {sideloadResult}</span>
-              {#if sideloadHint}<span class="muted small"> — {sideloadHint}</span>{/if}
+          {#if installResults[apk.path]}
+            {@const res = installResults[apk.path]}
+            <div class="install-result" class:ok={res.ok} class:bad={!res.ok}>
+              <span>{res.ok ? "✓" : "✕"} {res.message}</span>
+              {#if res.hint}<span class="muted small"> — {res.hint}</span>{/if}
             </div>
           {/if}
         </li>
       {/each}
     </ul>
+    {#if batchSummary}
+      <div class="install-result" class:ok={batchOk} class:bad={!batchOk}>
+        <span>{batchOk ? "✓" : "✕"} {batchSummary}</span>
+      </div>
+    {/if}
   {:else if discoveredFolder}
     <p class="muted small">No <code>.apk</code> files in {discoveredFolder}.</p>
   {/if}
 
-  {#if sideloadResult && !discoveredApks.some((a) => a.path === sideloadResultPath)}
-    <div class="install-result" class:ok={sideloadOk} class:bad={!sideloadOk}>
-      <span>{sideloadOk ? "✓" : "✕"} {sideloadResult}</span>
-      {#if sideloadHint}<span class="muted small"> — {sideloadHint}</span>{/if}
+  {#if scanError}
+    <div class="install-result bad"><span>✕ {scanError}</span></div>
+  {/if}
+
+  {#if looseResult}
+    <div class="install-result" class:ok={looseResult.ok} class:bad={!looseResult.ok}>
+      <span>{looseResult.ok ? "✓" : "✕"} {looseResult.message}</span>
+      {#if looseResult.hint}<span class="muted small"> — {looseResult.hint}</span>{/if}
     </div>
   {/if}
 </div>
@@ -481,13 +579,25 @@
   }
 
   /* Install-APK–specific styles. */
+  .apk-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
   .apk-folder {
+    flex: 1;
+    min-width: 0;
     margin: 0.4rem 0;
     padding: 0.4rem 0.6rem;
     background: var(--bg-inset);
     border: 1px solid var(--border);
     border-radius: 4px;
     word-break: break-all;
+  }
+  .batch-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
   }
   .apk-list {
     list-style: none;

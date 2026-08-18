@@ -12,7 +12,26 @@
   } from "$lib/types";
   import { isDeviceType, deviceNoun } from "$lib/types";
 
-  let { serial, deviceType }: { serial: string; deviceType: DeviceType } = $props();
+  // Renders one *group* of setting sections, not a tab of its own. "Tweaks"
+  // used to be a tab, but it was a junk drawer — input, network, TV control and
+  // memory settings unified only by not fitting elsewhere. The sections now file
+  // under the Settings sub-tab they belong to; this component still owns the
+  // shared `settings get/put` machinery and renders whichever group it's asked
+  // for. Each mounted group loads independently, so you only query the device
+  // for the sub-tab you actually opened.
+  type SectionGroup = "display" | "input" | "device";
+
+  let {
+    serial,
+    deviceType,
+    group,
+  }: { serial: string; deviceType: DeviceType; group: SectionGroup } = $props();
+
+  const GROUP_TITLE: Record<SectionGroup, string> = {
+    display: "TV & Scaling",
+    input: "Remote & Controller",
+    device: "Network & Performance",
+  };
 
   // Noun for inline copy on settings that apply to both device types.
   const noun = $derived(deviceNoun(deviceType));
@@ -23,7 +42,6 @@
   // global toggles).
   const REC = {
     hdmi: "1", // CEC on: Shield powers the TV on/off and switches to its input.
-    matchContent: "1", // Seamless only: matches fps with no black-screen flash.
     bgLimit: "2", // ≤2: frees RAM, stays snappy (resets to Standard on reboot).
     longPress: "300", // 300 ms: snappier OK long-press than the 400 ms default.
     animations: "0.5", // Fast: noticeably quicker UI without feeling broken.
@@ -151,9 +169,6 @@
   function hdmiLabel(v: string | null): string {
     return v === "1" ? "On" : v === "0" ? "Off" : "Unset";
   }
-  function matchContentLabel(v: string | null): string {
-    return v === "0" ? "Never" : v === "1" ? "Seamless only" : v === "2" ? "Always" : "Unset (default)";
-  }
   function bgLimitLabel(v: string | null): string {
     if (!v) return "Standard";
     return v === "0" ? "None" : `At most ${v}`;
@@ -268,16 +283,16 @@
   });
 </script>
 
-<div class="card" role="tabpanel" tabindex={0} id="tabpanel-tweaks" aria-labelledby="tab-tweaks">
+<div class="card section-card">
   <div class="card-header">
-    <h2>System Tweaks</h2>
+    <h2>{GROUP_TITLE[group]}</h2>
     <button onclick={loadTweaks} disabled={tweaksLoading}>
       {tweaksLoading ? "Loading…" : "Refresh"}
     </button>
   </div>
   <p class="muted small">
-    Flip device behaviors from v1's Display/Input Tuning menu. Most run
-    <code>settings put</code> (empty value resets to default).
+    Most of these run <code>settings put</code> (an empty value resets to the
+    device default).
   </p>
   {#if tweaksErr}
     <div class="error">{tweaksErr}</div>
@@ -288,6 +303,7 @@
       <p class="muted small mono action-message">{tweaksActionMessage}</p>
     {/if}
 
+    {#if group === "input"}
     {#if isDeviceType(deviceType, "shield") && netflixHooksState && netflixHooksState !== "missing"}
       <h3>Nvidia System Hooks</h3>
       <p class="muted small">
@@ -320,6 +336,8 @@
       </div>
     {/if}
 
+    {/if}
+    {#if group === "input"}
     {#if assistantState && assistantState !== "missing"}
       <h3>Remote Assistant Button</h3>
       <p class="muted small">
@@ -352,6 +370,8 @@
       </div>
     {/if}
 
+    {/if}
+    {#if group === "device"}
     {#if privateDns}
       <h3>Private DNS (DNS-over-TLS)</h3>
       <p class="muted small">
@@ -401,6 +421,8 @@
         <p class="muted small mono action-message">{dnsMessage}</p>
       {/if}
     {/if}
+    {/if}
+    {#if group === "display"}
 
     <h3>HDMI-CEC</h3>
     <p class="muted small">
@@ -444,39 +466,8 @@
         </div>
       {/each}
     </div>
-
-    <h3>Match Content Frame Rate</h3>
-    <p class="muted small">
-      Lets apps switch refresh rate to match video content (24/25/30/60 Hz). Seamless
-      only avoids visible black flashes during the switch.
-    </p>
-    <p class="rec">★ Recommended: <strong>Seamless only</strong> — matches the panel to video fps without the black-screen flash that <em>Always</em> causes on every switch. For true judder-free 24p movies, use the per-app Refresh Rate tool on the <strong>Display</strong> tab instead of this blunt global toggle. Pick <em>Never</em> only if mode switches glitch your TV.</p>
-    <div class="tweak-row">
-      <div>
-        <div class="current">Current: <strong>{matchContentLabel(tweaks.match_content_frame_rate)}</strong></div>
-        <div class="muted small mono">secure.match_content_frame_rate = {tweaks.match_content_frame_rate ?? "(unset)"}</div>
-      </div>
-      <div class="row-actions">
-        {#each [
-          { v: "0", label: "Never" },
-          { v: "1", label: "Seamless only" },
-          { v: "2", label: "Always" },
-        ] as opt (opt.v)}
-          <button
-            class="small-action"
-            class:active={tweaks.match_content_frame_rate === opt.v}
-            class:recommended={REC.matchContent === opt.v}
-            disabled={tweaksActionBusy === "match_content_frame_rate"}
-            onclick={() => writeTweak("secure", "match_content_frame_rate", opt.v, "match_content_frame_rate")}
-          >{opt.label}</button>
-        {/each}
-        <button
-          class="small-action"
-          disabled={tweaksActionBusy === "match_content_frame_rate"}
-          onclick={() => writeTweak("secure", "match_content_frame_rate", "", "match_content_frame_rate")}
-        >Reset</button>
-      </div>
-    </div>
+    {/if}
+    {#if group === "device"}
 
     <h3>Background Process Limit</h3>
     <p class="muted small">
@@ -532,6 +523,8 @@
         </span>
       </span>
     </label>
+    {/if}
+    {#if group === "input"}
 
     <h3>Long Press Timeout</h3>
     <p class="muted small">
@@ -561,6 +554,8 @@
         >Reset</button>
       </div>
     </div>
+    {/if}
+    {#if group === "device"}
 
     <h3>UI Animations</h3>
     <p class="muted small">
@@ -598,6 +593,8 @@
         >Reset</button>
       </div>
     </div>
+    {/if}
+    {#if group === "display"}
 
     <h3>Display Scaling</h3>
     <p class="muted small">
@@ -640,6 +637,7 @@
     </div>
     {#if displayScaleMessage}
       <p class="muted small mono action-message">{displayScaleMessage}</p>
+    {/if}
     {/if}
   {/if}
 </div>

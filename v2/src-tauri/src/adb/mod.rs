@@ -37,7 +37,8 @@ pub use parse::{
     parse_hardware_properties_temp, parse_installed_packages_output, parse_ls_output,
     parse_meminfo_summary, parse_permission_granted, parse_storage_info,
     parse_supported_display_modes, parse_thermal_max_celsius, parse_total_pss_by_process,
-    parse_usage_stats, AppUsage, DisplayMode, DisplayModeOption, FileEntry, RamInfo, StorageInfo,
+    parse_uptime_secs, parse_usage_stats, AppUsage, DisplayMode, DisplayModeOption, FileEntry,
+    RamInfo, StorageInfo,
 };
 pub use remote_input::RemoteInputSession;
 pub use scan::{local_subnet_prefix, scan_subnet, ScanHit};

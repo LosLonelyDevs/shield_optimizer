@@ -2,22 +2,28 @@
   import { api } from "$lib/api";
   import type { DeviceType, OptimizeMode, OptimizePlan, OptimizePlanItem, AppUsage } from "$lib/types";
   import AppRow from "$lib/components/AppRow.svelte";
-  import { isStaleUsage, usageLabel } from "$lib/usage";
+  import { isStaleUsage, usageLabel, windowIsConclusive, windowNote } from "$lib/usage";
 
   let {
     serial,
     deviceType,
     appUsage,
+    usageWindowSecs,
     resetToken,
     onStatesChanged,
     onPlanLoaded,
+    onShowAnimationSetting,
   }: {
     serial: string;
     deviceType: DeviceType;
     appUsage: Record<string, AppUsage>;
+    /// Device uptime — usage history is rebuilt at boot, so this bounds it.
+    usageWindowSecs: number | null;
     resetToken: number;
     onStatesChanged: () => void;
     onPlanLoaded: () => void;
+    /// Navigate to the UI Animations control instead of duplicating its write.
+    onShowAnimationSetting: () => void;
   } = $props();
 
   let optimizeMode = $state<OptimizeMode>("optimize");
@@ -36,7 +42,6 @@
   let optimizeFailureMessages = $state<Record<string, string>>({});
   let optimizeAbort = $state(false);
   let optimizeSummary = $state<string>("");
-  let optimizePerfApplied = $state<boolean>(false);
 
   // Bulk mutations elsewhere (App List actions, snapshot apply, panic
   // recovery) change the installed/disabled sets the plan baked in — the
@@ -60,7 +65,6 @@
     optimizeProgress = {};
     optimizeFailureMessages = {};
     optimizeSummary = "";
-    optimizePerfApplied = false;
     try {
       optimizePlan = await api.prepareOptimize(serial, deviceType, mode);
     } catch (e) {
@@ -179,22 +183,6 @@
     onStatesChanged();
   }
 
-  async function applyPerformanceSettings() {
-    if (!optimizePlan) return;
-    const profile = optimizeMode === "optimize" ? "optimized" : "default";
-    try {
-      const r = await api.applyPerformanceSettings(serial, profile);
-      optimizePerfApplied = r.ok;
-      optimizeSummary = optimizeSummary
-        ? `${optimizeSummary} Performance: ${r.message.trim()}.`
-        : `Performance: ${r.message.trim()}.`;
-    } catch (e) {
-      optimizeSummary = optimizeSummary
-        ? `${optimizeSummary} Performance failed: ${e}.`
-        : `Performance failed: ${e}.`;
-    }
-  }
-
   /// On-device state for an Optimize row, read off the plan's skip reason so
   /// StateBadge renders meaningfully here: a not-installed skip ⇒ missing, an
   /// already-disabled skip ⇒ disabled, everything else ⇒ enabled.
@@ -206,15 +194,27 @@
     return "enabled";
   }
 
-  // Mirror the App List's default-on filter: most catalog apps aren't on any
-  // given device, so an unfiltered plan is mostly un-actionable "Missing" rows.
-  // Filters only the rendered rows — the plan, summary, and counts are untouched.
-  let optimizeHideNotInstalled = $state(true);
+  /// Rows the wizard can actually do something about — the engine returned a
+  /// real action, so they carry a dropdown. Everything else is a no-op the
+  /// engine already resolved (not installed / already in the target state);
+  /// `compute_plan` only ever emits those three skip reasons, so "has no
+  /// natural action" and "is a no-op" are the same set.
+  let actionableItems = $derived(
+    optimizePlan ? optimizePlan.items.filter((i) => naturalAction(i) !== null) : [],
+  );
+  let noOpCount = $derived(
+    optimizePlan ? optimizePlan.items.length - actionableItems.length : 0,
+  );
+  /// What Run will actually touch, after per-app defaults and user overrides.
+  let selectedCount = $derived(actionableItems.filter((i) => effectiveAction(i) !== "skip").length);
+
+  // Default on: on a device that's been optimized once, nearly every catalog
+  // row is "not installed" or "already disabled" — a page of rows with no
+  // dropdown and nothing to decide. Filters only the rendered rows.
+  let optimizeHideNoOps = $state(true);
   let visibleOptimizeItems = $derived(
     optimizePlan
-      ? optimizePlan.items.filter(
-          (i) => !(optimizeHideNotInstalled && rowState(i) === "missing"),
-        )
+      ? optimizePlan.items.filter((i) => !(optimizeHideNoOps && naturalAction(i) === null))
       : [],
   );
 
@@ -260,20 +260,25 @@
   {:else if !optimizePlan}
     <p class="muted">Pick Optimize or Restore to load the plan.</p>
   {:else}
-    {@const actionable = optimizePlan.items.filter((i) => effectiveAction(i) !== "skip").length}
-    {@const totalRunning = optimizePlan.items
-      .filter((i) => naturalAction(i) !== null)
-      .reduce((acc, i) => acc + (i.memory_mb ?? 0), 0)}
+    {@const actionable = selectedCount}
+    {@const totalRunning = actionableItems.reduce((acc, i) => acc + (i.memory_mb ?? 0), 0)}
     <div class="plan-summary">
-      <strong>{actionable}</strong> of {optimizePlan.items.length} items will be acted on.
+      <!-- Counted against what's actually in play, not the whole catalog:
+           "8 of 62" was mostly counting apps that aren't on the device. -->
+      <strong>{actionable}</strong> of {actionableItems.length} app{actionableItems.length === 1 ? "" : "s"} will be acted on.
       {#if totalRunning > 0}
         <span class="muted">≈ {totalRunning.toFixed(0)} MB of RAM in play.</span>
+      {/if}
+      {#if noOpCount > 0}
+        <span class="muted">
+          {noOpCount} already {optimizeMode === "optimize" ? "gone or disabled" : "installed and enabled"}.
+        </span>
       {/if}
     </div>
     {#if optimizeMode === "optimize"}
       {@const reviewItems = optimizePlan.items.filter((i) => i.entry.review && rowState(i) === "enabled")}
       {@const usageLoaded = Object.keys(appUsage).length > 0}
-      {@const staleReview = usageLoaded ? reviewItems.filter((i) => isStaleUsage(appUsage[i.entry.package])) : []}
+      {@const staleReview = usageLoaded ? reviewItems.filter((i) => isStaleUsage(appUsage[i.entry.package], usageWindowSecs)) : []}
       {#if reviewItems.length > 0}
         <!-- The wizard's real value-add: the catalog can't know which streaming
              apps YOU use, so these rows need a human call — and the usage data
@@ -285,13 +290,38 @@
               <strong>{staleReview.length}</strong> show no recent use:
               {staleReview
                 .slice(0, 5)
-                .map((i) => `${i.entry.name} (${usageLabel(appUsage[i.entry.package])})`)
+                .map((i) => `${i.entry.name} (${usageLabel(appUsage[i.entry.package], usageWindowSecs)})`)
                 .join(", ")}{staleReview.length > 5 ? `, +${staleReview.length - 5} more` : ""}.
+            </span>
+          {:else if usageLoaded && !windowIsConclusive(usageWindowSecs)}
+            <!-- Don't imply the apps are unused when the data can't say so:
+                 usagestats is rebuilt at boot, so a recently-rebooted device
+                 has no history to judge against. -->
+            <span class="stale-line muted">
+              No usage history to rank these by yet — {windowNote(usageWindowSecs)}
             </span>
           {/if}
         </div>
       {/if}
     {/if}
+    {#if actionableItems.length === 0 && !optimizeSummary}
+      <!-- Every catalog app is already in its target state. There's no plan to
+           show and no button to press, so don't render a table of no-ops. -->
+      <div class="all-clear">
+        <span class="all-clear-mark" aria-hidden="true">✅</span>
+        <div>
+          <strong>Nothing to {optimizeMode === "optimize" ? "optimize" : "restore"}.</strong>
+          <div class="muted small">
+            {optimizeMode === "optimize"
+              ? `All ${optimizePlan.items.length} apps in this device's catalog are already disabled, uninstalled, or were never installed.`
+              : `Nothing in this device's catalog is disabled — there's nothing to bring back.`}
+            {optimizeMode === "optimize"
+              ? "Use the App List if you want to act on something outside the catalog."
+              : ""}
+          </div>
+        </div>
+      </div>
+    {:else}
     <div class="apply-row">
       <button
         class="primary"
@@ -304,25 +334,27 @@
         <button onclick={() => (optimizeAbort = true)}>Abort</button>
       {/if}
       {#if optimizeSummary && !optimizeRunning}
+        <!-- Animation scales are owned by Settings › Device › UI Animations.
+             This used to write them too, so the two disagreed until you
+             reloaded; now it just sends you to the control. -->
         <button
-          onclick={applyPerformanceSettings}
-          disabled={optimizePerfApplied}
-          title={optimizeMode === "optimize" ? "Set animation scales to 0.5×" : "Reset animation scales to 1×"}
-        >
-          {optimizePerfApplied ? "Performance applied" : (optimizeMode === "optimize" ? "Apply 0.5× animations" : "Reset animations to 1×")}
-        </button>
+          onclick={onShowAnimationSetting}
+          title="Opens Settings › Device, where UI Animations lives"
+        >Speed up animations →</button>
       {/if}
     </div>
     {#if optimizeSummary}
       <p class="muted small mono action-message">{optimizeSummary}</p>
     {/if}
 
-    <div class="app-toolbar">
-      <label class="inline-check">
-        <input type="checkbox" bind:checked={optimizeHideNotInstalled} />
-        Hide not installed
-      </label>
-    </div>
+    {#if noOpCount > 0}
+      <div class="app-toolbar">
+        <label class="inline-check">
+          <input type="checkbox" bind:checked={optimizeHideNoOps} />
+          Hide {noOpCount} with nothing to do
+        </label>
+      </div>
+    {/if}
 
     <table class="optimize-table">
       <thead>
@@ -347,6 +379,7 @@
             state={rowState(item)}
             mb={item.memory_mb ?? undefined}
             usage={appUsage[item.entry.package]}
+            usageWindowSecs={usageWindowSecs}
             showUsage={naturalAction(item) !== null}
             risk={item.entry.risk}
             rowClass={eff === "skip"
@@ -400,6 +433,7 @@
         {/each}
       </tbody>
     </table>
+    {/if}
   {/if}
 </div>
 
@@ -504,6 +538,20 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     font-size: 0.9rem;
+  }
+  .all-clear {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 0.8rem 0 0.2rem;
+    padding: 1rem 1.2rem;
+    background: var(--ok-surface);
+    border: 1px solid var(--ok);
+    border-radius: 6px;
+  }
+  .all-clear-mark {
+    font-size: 1.4rem;
+    line-height: 1;
   }
   .review-callout {
     margin: 0.4rem 0;

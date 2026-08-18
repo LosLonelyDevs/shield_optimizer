@@ -17,6 +17,70 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## v2-2.2.9
+
+- **Fixed "Last used" reporting almost every app as unused.** `dumpsys
+  usagestats` only exposes Android's in-memory buckets, and Android rebuilds
+  them at boot — every bucket, the one labelled "yearly" included, starts at the
+  last reboot. On a Shield up for 18 hours, 480 packages reported the epoch
+  timestamp and only 6 had real data. The column was reading the right field;
+  the problem was that "no record" was then treated as *stale = remove this*, so
+  a reboot turned every weekly-used app into a recommended removal. The backend
+  now reports device uptime alongside the usage map, "no record" only counts as
+  unused once the window is at least 30 days, and below that the label is
+  "not since reboot" (muted) instead of "no recent use" (warning). Tooltips say
+  how much history actually exists.
+- **Settings reorganized; Tweaks is gone.** It was a junk drawer — input,
+  network, TV-control, memory and display settings unified only by not fitting
+  anywhere else. Sub-tabs are now **Display · Audio · Input · Device**, with
+  HDMI-CEC and Display Scaling filed under Display alongside Screen Rotation and
+  Screen Timeout (moved off Device), remote/controller behaviour under Input,
+  and Private DNS / Background Process Limit / UI Animations under Device.
+- **Fixed a second duplicated control.** The Optimize wizard's "Apply 0.5×
+  animations" wrote the same three animation scales as Settings › Device › UI
+  Animations, so the two disagreed until you reloaded. The wizard now links to
+  that control instead of writing the setting itself.
+
+## v2-2.2.8
+
+- **One App List.** The tab used to be two tables split by an implementation
+  detail — "curated" (in our JSON catalog) above, "Everything else" below — each
+  with its own columns, its own filter, and a different set of row actions. It's
+  now a single table with **Curated / User / System** filter chips (Curated +
+  User on by default, matching what the two tables used to show), a *Needs
+  action* filter, and one action menu for every row. Search, Hide-not-installed
+  and the counts now apply to the whole list instead of half of it each.
+- **Same tools whatever the app.** Uninstall, Clear cache and Clear data used to
+  be reachable only for non-catalog packages; Play Store only for catalog ones.
+  What's offered now follows the package's actual state, not which list it came
+  from. Protected packages are still refused by the engine's safety gate.
+- `list_other_packages` became `list_installed_packages` — it returns every
+  installed package with `system` and `catalog` flags, instead of silently
+  dropping the catalog half.
+- **Last used is its own column** in the App List, instead of a badge stacked
+  under the state pill, and Recommended is centered. The "remove if unused"
+  review action is now an icon button (🗑 to remove, ⊘ to disable — the glyph
+  tracks the action, since a trash can on a reversible disable would overstate
+  it) with the full wording on hover.
+- **Optimize hides no-ops.** The plan always contained every catalog app, and
+  the old filter only hid the not-installed ones — so a second run was a page of
+  "Already disabled" rows with nothing to decide. All three no-op kinds now
+  collapse behind one "Hide N with nothing to do" (default on), and when
+  *nothing* is actionable the table is replaced by a "Nothing to optimize"
+  panel. The summary counts against what's in play ("8 of 14 apps") rather than
+  the whole catalog ("8 of 62 items").
+- **Settings groups Display / Audio / Device / Tweaks** under one top-level tab
+  with sub-tabs, taking the device page from 12 tabs to 9. Opening Settings
+  still only queries the device for the sub-tab you're on.
+- **Install all.** When a folder holds more than one APK, Install APK now has an
+  "Install all (N)" button that installs them one at a time, with live progress
+  and a Stop button that takes effect after the current file. Every row keeps its
+  own result line, and the run ends with a tally.
+- **Fixed a duplicated control.** Match Content Frame Rate existed on both
+  Tweaks and Display, each caching its own read of
+  `secure.match_content_frame_rate`, so the two could disagree. It now lives
+  only on Display, next to the per-app refresh-rate tool it references.
+
 ## v2-2.2.3
 
 - **Risk badges explain themselves.** Every Risk pill in the Health Report and

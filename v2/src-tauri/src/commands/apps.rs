@@ -12,7 +12,7 @@ use tauri::State;
 
 use crate::adb::{
     parse_disabled_packages_output, parse_installed_packages_output, parse_permission_granted,
-    parse_total_pss_by_process, parse_usage_stats, AppUsage,
+    parse_total_pss_by_process, parse_uptime_secs, parse_usage_stats, AppUsage,
 };
 use crate::engine::{classify_safety, is_valid_package_name, Safety};
 
@@ -179,15 +179,19 @@ fn parse_dumpsys_version_name(dumpsys: &str) -> Option<String> {
 }
 
 #[derive(Serialize)]
-pub struct OtherPackage {
+pub struct InstalledPackage {
     pub package: String,
     /// Preinstalled (not in `pm list packages -3`).
     pub system: bool,
     pub enabled: bool,
     /// Friendly name from the curated known-names map, when recognized. Lets the
-    /// UI show and search "Everything else" by a real name (e.g. "Artemis")
-    /// instead of only the package id. `None` for unrecognized packages.
+    /// UI show and search by a real name (e.g. "Artemis") instead of only the
+    /// package id. `None` for unrecognized packages.
     pub name: Option<String>,
+    /// In the curated catalog. The App List renders one table over both, so it
+    /// needs to tell a curated row (which carries a recommendation) from the
+    /// long tail — without a second call that re-lists the same device.
+    pub catalog: bool,
 }
 
 /// Package-name prefixes that belong to the device vendor / OS, not the user.
@@ -206,22 +210,22 @@ fn is_first_party_package(pkg: &str) -> bool {
     pkg == "android" || PREFIXES.iter().any(|p| pkg.starts_with(p))
 }
 
-/// `list_other_packages` — every installed package that is NOT in the curated
-/// catalog, so the App List can act on the long tail (sideloaded apps like
-/// SmartTube most of all — they get the same Backup / Copy / Disable tools).
-/// Third-party first, then system, names ascending.
+/// `list_installed_packages` — every package installed on the device, each
+/// flagged system/user and in-catalog/not, so the App List can render one table
+/// over the whole device: curated bloat, sideloads like SmartTube, and system
+/// internals alike. Third-party first, then system, names ascending.
 #[tauri::command]
-pub async fn list_other_packages(
+pub async fn list_installed_packages(
     state: State<'_, AppState>,
     serial: String,
-) -> Result<Vec<OtherPackage>, String> {
-    list_other_packages_impl(state.inner(), &serial).await
+) -> Result<Vec<InstalledPackage>, String> {
+    list_installed_packages_impl(state.inner(), &serial).await
 }
 
-pub async fn list_other_packages_impl(
+pub async fn list_installed_packages_impl(
     state: &AppState,
     serial: &str,
-) -> Result<Vec<OtherPackage>, String> {
+) -> Result<Vec<InstalledPackage>, String> {
     let adb = state.adb_snapshot().await;
     let (all_res, third_res, disabled_res) = tokio::join!(
         adb.shell(serial, "pm list packages"),
@@ -247,15 +251,15 @@ pub async fn list_other_packages_impl(
         .map(|e| e.package.as_str())
         .collect();
 
-    let mut out: Vec<OtherPackage> = parse_installed_packages_output(&all.stdout)
+    let mut out: Vec<InstalledPackage> = parse_installed_packages_output(&all.stdout)
         .into_iter()
-        .filter(|p| !catalog.contains(p.as_str()))
-        .map(|package| OtherPackage {
+        .map(|package| InstalledPackage {
             // System if Android says so OR it's a vendor/OS package Android
             // happens to flag third-party (updated Google IMEs, etc.).
             system: !third.contains(&package) || is_first_party_package(&package),
             enabled: !disabled.contains(&package),
             name: state.known_names.get(&package).cloned(),
+            catalog: catalog.contains(package.as_str()),
             package,
         })
         .collect();
@@ -292,27 +296,48 @@ pub async fn app_memory_map_impl(
     Ok(parse_total_pss_by_process(&out.stdout))
 }
 
+/// Per-package usage plus the window it was observed over.
+#[derive(Serialize)]
+pub struct UsageReport {
+    /// Device uptime in seconds, or `None` if `/proc/uptime` was unreadable.
+    ///
+    /// This is the honest bound on the whole dataset. `dumpsys usagestats`
+    /// prints only in-memory buckets and Android rebuilds them at boot — every
+    /// bucket, "yearly" included, starts at the last reboot. So an absent
+    /// record means "not opened since boot", which on a box rebooted an hour
+    /// ago says nothing about whether the app is used. The UI needs this to
+    /// avoid flagging everything as an unused-removal candidate.
+    pub window_secs: Option<u64>,
+    pub entries: HashMap<String, AppUsage>,
+}
+
 /// `app_usage_map` — package → last-used + launch count, from a single
-/// `dumpsys usagestats`. Powers the "Review / remove if unused" signal: an app
-/// never opened (or not in months) is a strong candidate to disable/uninstall.
+/// `dumpsys usagestats`, plus the uptime window that data covers. Powers the
+/// "Review / remove if unused" signal: an app not opened over a long enough
+/// window is a candidate to disable/uninstall.
 #[tauri::command]
 pub async fn app_usage_map(
     state: State<'_, AppState>,
     serial: String,
-) -> Result<HashMap<String, AppUsage>, String> {
+) -> Result<UsageReport, String> {
     app_usage_map_impl(state.inner(), &serial).await
 }
 
-pub async fn app_usage_map_impl(
-    state: &AppState,
-    serial: &str,
-) -> Result<HashMap<String, AppUsage>, String> {
+pub async fn app_usage_map_impl(state: &AppState, serial: &str) -> Result<UsageReport, String> {
     let adb = state.adb_snapshot().await;
-    let out = adb
-        .shell(serial, "dumpsys usagestats")
-        .await
-        .map_err(|e| format!("dumpsys usagestats: {e}"))?;
-    Ok(parse_usage_stats(&out.stdout))
+    let (stats_res, uptime_res) = tokio::join!(
+        adb.shell(serial, "dumpsys usagestats"),
+        adb.shell(serial, "cat /proc/uptime"),
+    );
+    let stats = stats_res.map_err(|e| format!("dumpsys usagestats: {e}"))?;
+    // Best-effort: a missing uptime just means the UI can't calibrate staleness.
+    let window_secs = uptime_res
+        .ok()
+        .and_then(|o| parse_uptime_secs(o.stdout.trim()));
+    Ok(UsageReport {
+        window_secs,
+        entries: parse_usage_stats(&stats.stdout),
+    })
 }
 
 #[derive(Serialize)]
@@ -826,7 +851,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_other_packages_attaches_known_friendly_names() {
+    async fn list_installed_packages_attaches_known_friendly_names() {
         use crate::commands::test_support::{state_with, MockAdb};
         use std::collections::HashMap;
 
@@ -847,7 +872,9 @@ mod tests {
         );
         let state = state_with(mock).with_known_names(names);
 
-        let others = list_other_packages_impl(&state, "serial").await.unwrap();
+        let others = list_installed_packages_impl(&state, "serial")
+            .await
+            .unwrap();
         let artemis = others
             .iter()
             .find(|o| o.package == "com.limelight.noir")
@@ -861,6 +888,59 @@ mod tests {
             unknown.name, None,
             "unrecognized package has no friendly name"
         );
+    }
+
+    #[tokio::test]
+    async fn list_installed_packages_keeps_catalog_entries_and_flags_them() {
+        use crate::commands::test_support::MockAdb;
+        use crate::engine::{ActionMethod, AppEntry, AppListBundle, RiskTier};
+        use std::sync::Arc;
+
+        let bundle = AppListBundle {
+            common: vec![AppEntry {
+                package: "com.example.bloat".into(),
+                name: "Bloat".into(),
+                method: ActionMethod::Disable,
+                risk: RiskTier::Safe,
+                optimize_description: String::new(),
+                restore_description: String::new(),
+                default_optimize: true,
+                default_restore: false,
+                play_store: false,
+                defunct: false,
+                review: false,
+            }],
+            shield: vec![],
+            googletv: vec![],
+        };
+        // "packages -d" must precede "pm list packages" — MockAdb takes the
+        // first matching needle and the disabled command contains both.
+        let mock = MockAdb::default()
+            .on_shell("packages -d", "")
+            .on_shell("pm list packages -3", "package:com.unknown.app")
+            .on_shell(
+                "pm list packages",
+                "package:com.example.bloat\npackage:com.unknown.app",
+            );
+        let state = AppState::new(Arc::new(mock), bundle, std::env::temp_dir());
+
+        let all = list_installed_packages_impl(&state, "serial")
+            .await
+            .unwrap();
+
+        let bloat = all
+            .iter()
+            .find(|p| p.package == "com.example.bloat")
+            .expect("catalog package is listed, not filtered out");
+        assert!(bloat.catalog, "catalog package flagged as such");
+        assert!(bloat.system, "not in `-3` output, so preinstalled");
+
+        let sideload = all
+            .iter()
+            .find(|p| p.package == "com.unknown.app")
+            .expect("non-catalog package listed");
+        assert!(!sideload.catalog);
+        assert!(!sideload.system);
     }
 
     #[tokio::test]
@@ -882,22 +962,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_usage_map_reports_last_used() {
+    async fn app_usage_map_reports_last_used_and_uptime_window() {
         use crate::commands::test_support::{state_with, MockAdb};
 
         let usage = "package=com.netflix.ninja lastTimeUsed=\"2026-06-01 09:00:00\" appLaunchCount=5\n\
                      package=com.unused.app lastTimeUsed=\"1969-12-31 18:00:00\" appLaunchCount=0\n";
-        let state = state_with(MockAdb::default().on_shell("dumpsys usagestats", usage));
-        let map = app_usage_map_impl(&state, "serial").await.unwrap();
+        let state = state_with(
+            MockAdb::default()
+                .on_shell("dumpsys usagestats", usage)
+                .on_shell("/proc/uptime", "66526.81 234153.95\n"),
+        );
+        let report = app_usage_map_impl(&state, "serial").await.unwrap();
         assert_eq!(
-            map.get("com.netflix.ninja")
+            report
+                .entries
+                .get("com.netflix.ninja")
                 .and_then(|u| u.last_used.as_deref()),
             Some("2026-06-01 09:00:00")
         );
         assert_eq!(
-            map.get("com.unused.app").and_then(|u| u.last_used.clone()),
+            report
+                .entries
+                .get("com.unused.app")
+                .and_then(|u| u.last_used.clone()),
             None
         );
+        // The window is what lets the UI tell "not used in ages" apart from
+        // "the box rebooted an hour ago and history restarted".
+        assert_eq!(report.window_secs, Some(66526));
+    }
+
+    #[tokio::test]
+    async fn app_usage_map_survives_unreadable_uptime() {
+        use crate::commands::test_support::{state_with, MockAdb};
+
+        // No rule for /proc/uptime — the mock errors, and usage must still load.
+        let state = state_with(MockAdb::default().on_shell(
+            "dumpsys usagestats",
+            "package=com.netflix.ninja lastTimeUsed=\"2026-06-01 09:00:00\" appLaunchCount=5\n",
+        ));
+        let report = app_usage_map_impl(&state, "serial").await.unwrap();
+        assert!(report.entries.contains_key("com.netflix.ninja"));
+        assert_eq!(report.window_secs, None);
     }
 
     #[tokio::test]

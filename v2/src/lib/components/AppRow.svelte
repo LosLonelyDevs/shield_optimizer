@@ -23,6 +23,9 @@
     usage,
     showUsage = true,
     risk,
+    kind,
+    usageColumn = false,
+    usageWindowSecs = null,
     safety,
     overridden = false,
     riskBusy = false,
@@ -39,7 +42,19 @@
     ramLabel?: boolean;
     usage?: AppUsage;
     showUsage?: boolean;
-    risk: RiskTier;
+    /// Render the last-used cue as its own cell after State instead of stacking
+    /// it under the state badge. Opt-in: the host must add the matching
+    /// `<th>Last used</th>`.
+    usageColumn?: boolean;
+    /// Device uptime — bounds how far back the usage data can see.
+    usageWindowSecs?: number | null;
+    /// Curated risk tier; omitted for packages outside the catalog, which the
+    /// risk pill then renders as UNKNOWN off the safety map alone.
+    risk?: RiskTier;
+    /// Provenance chip next to the name. Only the non-curated kinds get one —
+    /// a curated row already announces itself with a description + a
+    /// recommendation.
+    kind?: "curated" | "user" | "system";
     safety?: Safety;
     overridden?: boolean;
     riskBusy?: boolean;
@@ -53,6 +68,11 @@
   <td class="app-cell">
     <div class="app-name-row">
       {name}
+      {#if kind === "user"}
+        <span class="tag kind-user" title="Installed by you — not part of the stock system image">USER</span>
+      {:else if kind === "system"}
+        <span class="tag kind-system" title="Preinstalled with the system image">SYSTEM</span>
+      {/if}
       {#if review}
         <span class="tag review" title="Remove if you don't use it">REVIEW</span>
       {/if}
@@ -67,10 +87,19 @@
     {#if mb}
       <div class="cell-cue"><RamBadge {mb} label={ramLabel} /></div>
     {/if}
-    {#if usage && showUsage}
-      <div class="cell-cue"><UsageBadge {usage} /></div>
+    {#if usage && showUsage && !usageColumn}
+      <div class="cell-cue"><UsageBadge {usage} windowSecs={usageWindowSecs} /></div>
     {/if}
   </td>
+  {#if usageColumn}
+    <td class="center usage-col">
+      {#if usage && showUsage}
+        <UsageBadge {usage} compact windowSecs={usageWindowSecs} />
+      {:else}
+        <span class="usage-none">—</span>
+      {/if}
+    </td>
+  {/if}
   <td class="center risk-cell">
     <RiskBadge
       {pkg}
@@ -125,6 +154,13 @@
   .cell-cue {
     margin-top: 0.2rem;
   }
+  .usage-col {
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+  .usage-none {
+    color: var(--fg-faint);
+  }
   .risk-cell {
     overflow: visible;
     white-space: nowrap;
@@ -138,6 +174,14 @@
   .tag.review {
     background: var(--warn-surface-2);
     color: var(--warn);
+  }
+  /* Provenance chips read as metadata, not as a warning — muted next to the
+     name so REVIEW keeps its emphasis. */
+  .tag.kind-user,
+  .tag.kind-system {
+    background: var(--bg-inset);
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
   }
   .small {
     font-size: 0.82rem;

@@ -3,7 +3,12 @@
   import { api } from "$lib/api";
   import type { SystemInfo, SystemScreen, SettingNamespace } from "$lib/types";
 
-  let { serial }: { serial: string } = $props();
+  // Screen Rotation / Screen Timeout describe the screen, so they render under
+  // Settings › Display; everything else is the Device panel. One component
+  // either way — the sections share this file's `systemInfo` load.
+  type SectionGroup = "display" | "device";
+
+  let { serial, group = "device" }: { serial: string; group?: SectionGroup } = $props();
 
   let info = $state<SystemInfo | null>(null);
   let loading = $state(false);
@@ -114,14 +119,16 @@
   onMount(load);
 </script>
 
-<div class="card" role="tabpanel" tabindex={0} id="tabpanel-system" aria-labelledby="tab-system">
+<div class="card section-card">
   <div class="card-header">
-    <h2>System</h2>
+    <h2>{group === "display" ? "Screen Behavior" : "Device"}</h2>
     <button onclick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button>
   </div>
   <p class="muted small">
-    Device settings, quick tools, and a few facts the other tabs don't show. Setting
-    writes use <code>settings put</code> (Reset returns to default).
+    {group === "display"
+      ? "How the screen behaves when idle, and which way it's oriented."
+      : "Device settings, quick tools, and a few facts the other tabs don't show."}
+    Setting writes use <code>settings put</code> (Reset returns to default).
   </p>
 
   {#if message}
@@ -132,6 +139,49 @@
   {:else if !info}
     <div class="muted">{loading ? "Querying…" : "—"}</div>
   {:else}
+    {#if group === "display"}
+
+    <h3>Screen Rotation</h3>
+    <p class="rec">★ Recommended: <strong>0° (landscape)</strong> — the normal orientation for a TV. The other angles are for unusual mounts/signage.</p>
+    <div class="tweak-row">
+      <div>
+        <div class="current">Current: <strong>{rotationLabel(info.user_rotation)}</strong></div>
+        <div class="muted small mono">system.user_rotation = {info.user_rotation ?? "(unset)"}</div>
+      </div>
+      <div class="row-actions">
+        {#each ROTATIONS as opt (opt.v)}
+          <button
+            class="small-action"
+            class:active={info.user_rotation === opt.v}
+            class:recommended={opt.v === "0"}
+            disabled={busy === "user_rotation"}
+            onclick={() => writeSetting("system", "user_rotation", opt.v, "user_rotation")}
+          >{opt.label}</button>
+        {/each}
+      </div>
+    </div>
+
+    <h3>Screen Timeout</h3>
+    <p class="rec">★ Recommended: <strong>30 min</strong> — video apps hold the screen awake while playing, so this only governs idle time. Pick <em>Never</em> if a screensaver ever interrupts you.</p>
+    <div class="tweak-row">
+      <div>
+        <div class="current">Current: <strong>{timeoutLabel(info.screen_off_timeout)}</strong></div>
+        <div class="muted small mono">system.screen_off_timeout = {info.screen_off_timeout ?? "(unset)"}</div>
+      </div>
+      <div class="row-actions">
+        {#each TIMEOUTS as opt (opt.v)}
+          <button
+            class="small-action"
+            class:active={info.screen_off_timeout === opt.v}
+            class:recommended={opt.v === "1800000"}
+            disabled={busy === "screen_off_timeout"}
+            onclick={() => writeSetting("system", "screen_off_timeout", opt.v, "screen_off_timeout")}
+          >{opt.label}</button>
+        {/each}
+      </div>
+    </div>
+    {/if}
+    {#if group === "device"}
     <h3>Device Info</h3>
     <dl class="kv">
       <dt>Battery</dt>
@@ -173,46 +223,6 @@
       <button disabled={busy === "compile"} onclick={() => tool("Compile speed-profile", "compile", () => api.compileSpeedProfile(serial))}>
         {busy === "compile" ? "Compiling… (minutes)" : "Compile speed-profile"}
       </button>
-    </div>
-
-    <h3>Screen Rotation</h3>
-    <p class="rec">★ Recommended: <strong>0° (landscape)</strong> — the normal orientation for a TV. The other angles are for unusual mounts/signage.</p>
-    <div class="tweak-row">
-      <div>
-        <div class="current">Current: <strong>{rotationLabel(info.user_rotation)}</strong></div>
-        <div class="muted small mono">system.user_rotation = {info.user_rotation ?? "(unset)"}</div>
-      </div>
-      <div class="row-actions">
-        {#each ROTATIONS as opt (opt.v)}
-          <button
-            class="small-action"
-            class:active={info.user_rotation === opt.v}
-            class:recommended={opt.v === "0"}
-            disabled={busy === "user_rotation"}
-            onclick={() => writeSetting("system", "user_rotation", opt.v, "user_rotation")}
-          >{opt.label}</button>
-        {/each}
-      </div>
-    </div>
-
-    <h3>Screen Timeout</h3>
-    <p class="rec">★ Recommended: <strong>30 min</strong> — video apps hold the screen awake while playing, so this only governs idle time. Pick <em>Never</em> if a screensaver ever interrupts you.</p>
-    <div class="tweak-row">
-      <div>
-        <div class="current">Current: <strong>{timeoutLabel(info.screen_off_timeout)}</strong></div>
-        <div class="muted small mono">system.screen_off_timeout = {info.screen_off_timeout ?? "(unset)"}</div>
-      </div>
-      <div class="row-actions">
-        {#each TIMEOUTS as opt (opt.v)}
-          <button
-            class="small-action"
-            class:active={info.screen_off_timeout === opt.v}
-            class:recommended={opt.v === "1800000"}
-            disabled={busy === "screen_off_timeout"}
-            onclick={() => writeSetting("system", "screen_off_timeout", opt.v, "screen_off_timeout")}
-          >{opt.label}</button>
-        {/each}
-      </div>
     </div>
 
     <h3>Location (GPS)</h3>
@@ -317,6 +327,7 @@
       />
       <button class="small-action" disabled={busy === "launch"} onclick={launch}>Launch</button>
     </div>
+    {/if}
   {/if}
 </div>
 

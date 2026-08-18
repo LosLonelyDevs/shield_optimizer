@@ -51,9 +51,17 @@ export interface AppEntry {
 
 /// When an app was last opened (from dumpsys usagestats).
 export interface AppUsage {
-  /// "YYYY-MM-DD HH:MM:SS" of last use, or null if never opened.
+  /// "YYYY-MM-DD HH:MM:SS" of last use, or null if not opened in the window.
   last_used: string | null;
   launch_count: number;
+}
+
+/// Usage plus the window it was observed over. `window_secs` is device uptime:
+/// `dumpsys usagestats` only reports Android's in-memory buckets, which are
+/// rebuilt at boot, so nothing older than the last reboot exists to report.
+export interface UsageReport {
+  window_secs: number | null;
+  entries: Record<string, AppUsage>;
 }
 
 export interface LauncherEntry {
@@ -146,12 +154,15 @@ export interface ActionResult {
   message: string;
 }
 
-export interface OtherPackage {
+export interface InstalledPackage {
   package: string;
   system: boolean;
   enabled: boolean;
   /// Friendly name for recognized sideloads (Artemis, Overseerr, …); null otherwise.
   name?: string | null;
+  /// Present in the curated catalog — the App List pairs these with their
+  /// `AppEntry` for the recommendation column.
+  catalog: boolean;
 }
 
 export interface SetLauncherResult {

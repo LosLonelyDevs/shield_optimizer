@@ -36,7 +36,7 @@ import type {
   LauncherStatus,
   OptimizeMode,
   OptimizePlan,
-  OtherPackage,
+  InstalledPackage,
   PerformanceProfile,
   PerformanceResult,
   PrivateDnsResult,
@@ -160,12 +160,12 @@ export const api = {
     invoke<ActionResult>("set_app_op", { serial, package: pkg, op, allow }),
   getAppOp: (serial: string, pkg: string, op: string) =>
     invoke<string>("get_app_op", { serial, package: pkg, op }),
-  listOtherPackages: (serial: string) =>
-    invoke<OtherPackage[]>("list_other_packages", { serial }),
+  listInstalledPackages: (serial: string) =>
+    invoke<InstalledPackage[]>("list_installed_packages", { serial }),
   appMemoryMap: (serial: string) =>
     invoke<Record<string, number>>("app_memory_map", { serial }),
   appUsageMap: (serial: string) =>
-    invoke<Record<string, import("$lib/types").AppUsage>>("app_usage_map", { serial }),
+    invoke<import("$lib/types").UsageReport>("app_usage_map", { serial }),
   safetyInfo: (pkg: string) => invoke<Safety>("safety_info", { package: pkg }),
   /// Packages the user has manually declared safe on this device (persisted
   /// against the device's stable identity, so marks survive reconnects and IP

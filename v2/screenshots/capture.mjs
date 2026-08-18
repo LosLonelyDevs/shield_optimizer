@@ -84,26 +84,31 @@ async function captureScreens(page, shot) {
     await page.waitForTimeout(600);
     await shot("optimize");
 
-    // 7. Tweaks.
-    await page.locator("#tab-tweaks").click();
-    await page.getByText("HDMI", { exact: false }).first().waitFor();
-    await shot("tweaks");
+    // 7. Settings — one tab with Display / Audio / Device / Tweaks sub-tabs.
+    await page.locator("#tab-settings").click();
 
-    // 7b. Display wizard (includes the Launchers section).
-    await page.locator("#tab-display").click();
+    // 7a. Display (includes the Launchers section). Opens by default.
+    await page.locator("#subtab-display").click();
     await page.getByText("Supported Modes", { exact: false }).first().waitFor();
     await page.getByText("Projectivy Launcher", { exact: false }).first().waitFor();
+    await page.getByText("HDMI-CEC", { exact: false }).first().waitFor();
     await page.waitForTimeout(300);
     await shot("display");
 
-    // 7c. Audio wizard.
-    await page.locator("#tab-audio").click();
+    // 7b. Audio.
+    await page.locator("#subtab-audio").click();
     await page.getByText("Surround Output Mode", { exact: false }).first().waitFor();
     await page.waitForTimeout(300);
     await shot("audio");
 
-    // 7d. System tab.
-    await page.locator("#tab-system").click();
+    // 7c. Input — remote/controller behaviour.
+    await page.locator("#subtab-input").click();
+    await page.getByText("Long Press Timeout", { exact: false }).first().waitFor();
+    await page.waitForTimeout(300);
+    await shot("input");
+
+    // 7d. Device.
+    await page.locator("#subtab-system").click();
     await page.getByText("Device Info", { exact: false }).first().waitFor();
     await page.waitForTimeout(300);
     await shot("system");

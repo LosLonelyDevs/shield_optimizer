@@ -178,6 +178,21 @@ pub struct AppUsage {
     pub launch_count: u32,
 }
 
+/// Seconds since boot from `/proc/uptime` (first field). This bounds how much
+/// usage history exists at all: `dumpsys usagestats` prints only the in-memory
+/// buckets, and Android rebuilds those at boot — even the "yearly" bucket
+/// starts at the last reboot. Without it, an app the user opens weekly reads
+/// as "never used" on a freshly-rebooted device.
+pub fn parse_uptime_secs(proc_uptime: &str) -> Option<u64> {
+    proc_uptime
+        .split_whitespace()
+        .next()?
+        .parse::<f64>()
+        .ok()
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .map(|s| s as u64)
+}
+
 /// Parse per-package last-used + launch count from `dumpsys usagestats`. Each
 /// package's usage appears across several stat buckets; we keep the most recent
 /// `lastTimeUsed` and the highest `appLaunchCount` seen. A `1969`/`1970`
@@ -569,6 +584,15 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn parses_uptime_first_field_only() {
+        // "<uptime> <idle>", both fractional seconds.
+        assert_eq!(parse_uptime_secs("66526.81 234153.95"), Some(66526));
+        assert_eq!(parse_uptime_secs("66526.81 234153.95\n"), Some(66526));
+        assert_eq!(parse_uptime_secs(""), None);
+        assert_eq!(parse_uptime_secs("not-a-number 1.0"), None);
     }
 
     #[test]
