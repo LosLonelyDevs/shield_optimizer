@@ -1,51 +1,51 @@
 {
-  "version": "2.2.3",
-  "notes": "",
-  "pub_date": "2026-07-20T15:54:54.533Z",
+  "version": "2.2.10",
+  "notes": "- **Downgrades actually install now.** The Install APK list has always been able\n  to *tell* you an APK was older than what's on the device — it labelled the row\n  DOWNGRADE — but the install itself ran plain `adb install -r`, which Android\n  rejects with `INSTALL_FAILED_VERSION_DOWNGRADE`. Installs now add `-d` when\n  the APK is the older one, and any install that trips the downgrade guard gets\n  one automatic retry with the flag set, so a file picked outside the scanned\n  folder (where there's no version to compare) works the same way. Downgrade\n  rows say \"Downgrade\" on the button and \"Downgraded.\" on success.\n- **A way through when Android still says no.** `-d` only works for debuggable\n  apps, so on a retail device most downgrades fail even with it. That result now\n  offers an **Uninstall & install** button — it removes the installed copy and\n  installs the older APK, after warning that the app's data and sign-in go with\n  it.\n\n---\n\n### First-run warnings\n\nThese builds are unsigned. Your OS may complain on first launch:\n\n- **macOS** (Gatekeeper): the first-launch dialog on macOS 15+ only offers \"Move to Trash\" or \"Done\" — click **Done**, then either:\n    - **Terminal:** `xattr -dr com.apple.quarantine \"/Applications/Shield Optimizer.app\"` (one-time, then double-click as normal)\n    - **GUI:** System Settings → Privacy & Security → scroll to the \"Shield Optimizer was blocked\" message → **Open Anyway** → enter password\n- **Windows** (SmartScreen): \"More info\" → \"Run anyway\".\n- **Linux**: `chmod +x ShieldOptimizer*.AppImage` before running.\n\nSee the [v2 README](https://github.com/LosLonelyDevs/shield_optimizer/blob/main/v2/README.md) for setup and feature docs.",
+  "pub_date": "2026-08-26T20:19:57.048Z",
   "platforms": {
-    "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0dna203cDVaNzN0cjRzZXlGSnRiZ3pEZEVYZFozZU9hdTJmSHV2eFBKaWErWE4zUTNUM2p4N3RVT3ZqSlBmM0FERnlMZ0UxUEV6VGRmU1hZTW9aeUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODM2CWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Cmsvcy9FRmVvVDB5RVkzNXpPbHcxSmtLZDljaTF4S0l1SGtBY1M5SlJETmx5aCtJNGQ4U3N0MjIyWSt4WWI1QWpTbC9zUlNrUHdPRFZHRVNyQ09ZYkRnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_universal.app.tar.gz"
-    },
-    "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0dna203cDVaNzN0cjRzZXlGSnRiZ3pEZEVYZFozZU9hdTJmSHV2eFBKaWErWE4zUTNUM2p4N3RVT3ZqSlBmM0FERnlMZ0UxUEV6VGRmU1hZTW9aeUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODM2CWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Cmsvcy9FRmVvVDB5RVkzNXpPbHcxSmtLZDljaTF4S0l1SGtBY1M5SlJETmx5aCtJNGQ4U3N0MjIyWSt4WWI1QWpTbC9zUlNrUHdPRFZHRVNyQ09ZYkRnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_universal.app.tar.gz"
-    },
-    "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0dna203cDVaNzN0cjRzZXlGSnRiZ3pEZEVYZFozZU9hdTJmSHV2eFBKaWErWE4zUTNUM2p4N3RVT3ZqSlBmM0FERnlMZ0UxUEV6VGRmU1hZTW9aeUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODM2CWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Cmsvcy9FRmVvVDB5RVkzNXpPbHcxSmtLZDljaTF4S0l1SGtBY1M5SlJETmx5aCtJNGQ4U3N0MjIyWSt4WWI1QWpTbC9zUlNrUHdPRFZHRVNyQ09ZYkRnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_universal.app.tar.gz"
-    },
-    "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0dna203cDVaNzN0cjRzZXlGSnRiZ3pEZEVYZFozZU9hdTJmSHV2eFBKaWErWE4zUTNUM2p4N3RVT3ZqSlBmM0FERnlMZ0UxUEV6VGRmU1hZTW9aeUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODM2CWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Cmsvcy9FRmVvVDB5RVkzNXpPbHcxSmtLZDljaTF4S0l1SGtBY1M5SlJETmx5aCtJNGQ4U3N0MjIyWSt4WWI1QWpTbC9zUlNrUHdPRFZHRVNyQ09ZYkRnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_universal.app.tar.gz"
-    },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0lNcXplclkrNXNxMkxONnVlRnBOQnVSNUI4MWptaU1ON24zYmkxZStucithQ1g3V1dzTEVmYVNxRTEyNW1KaEdVWmdXOVJyZWNQTGZSRnBDWHB1ZHdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODc3CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM19hbWQ2NC5BcHBJbWFnZQpDNVhlVFJSOGMxSXIrY2kxOUl6U2t0ZjUwOWl3ZEhCUGZKVFllUmREL29mTFdyQUI1S3VNL3IrYzdNdE5DamVCdm1SNTdmQnJjSHpQNUFLRU5ZdDBBZz09Cg==",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0UvK0xRTWxkaTQrVGxZekt2QmFRS2JIYlRkQkk2d1ljWGRmaHBtUnBxN3h4NXA1aCtNaXJJZjZrbHFqY2ZlMDNIbEtCVmx0Z210TGFJMDQrR0dnR3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTA1CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfYW1kNjQuQXBwSW1hZ2UKUyswQStJckNNdnVOeFkydHBlMGNBVnBzTEJXQzd4Nm4yWDZlL1ViZXpIQ0JkUzY1TlJhaFdNekdzMXFWc2YvbTRZcFNENUxhSG9JL3dFK2FuSnNjQ1E9PQo=",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_amd64.AppImage"
     },
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0lNcXplclkrNXNxMkxONnVlRnBOQnVSNUI4MWptaU1ON24zYmkxZStucithQ1g3V1dzTEVmYVNxRTEyNW1KaEdVWmdXOVJyZWNQTGZSRnBDWHB1ZHdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODc3CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM19hbWQ2NC5BcHBJbWFnZQpDNVhlVFJSOGMxSXIrY2kxOUl6U2t0ZjUwOWl3ZEhCUGZKVFllUmREL29mTFdyQUI1S3VNL3IrYzdNdE5DamVCdm1SNTdmQnJjSHpQNUFLRU5ZdDBBZz09Cg==",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0UvK0xRTWxkaTQrVGxZekt2QmFRS2JIYlRkQkk2d1ljWGRmaHBtUnBxN3h4NXA1aCtNaXJJZjZrbHFqY2ZlMDNIbEtCVmx0Z210TGFJMDQrR0dnR3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTA1CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfYW1kNjQuQXBwSW1hZ2UKUyswQStJckNNdnVOeFkydHBlMGNBVnBzTEJXQzd4Nm4yWDZlL1ViZXpIQ0JkUzY1TlJhaFdNekdzMXFWc2YvbTRZcFNENUxhSG9JL3dFK2FuSnNjQ1E9PQo=",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_amd64.AppImage"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05pVmJrS05wUTkvT1Q2Q0F6aVFxbkdDUkV1a2RSY3pWbjMveFhESWhabS8raEIzRXZsZS9YSi9hS1ZuWFJJelNKZkdoMlB0SkttSityOEppS1ZtSVFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODc3CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM19hbWQ2NC5kZWIKOHJFRktRblNoQ3VkYVlHV0JsZDN5UUMrNitXd1RDUTJ3NWVUV2xYek91UUpSSXE3cm51UGo0anhzUnJ6TkwwelpBcHZ4bEtNbWRJOExuQnJ2UUdQQlE9PQo=",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN04yRTJVY0NZZngxY1E3QmlRWVNrZUFkOGRLangvY3JjMjd1UGNERkkyU000UlE0eUhwRmp4UWdqelF6VkJzVVBnY2ovM2dGd0E2bVYxdmJaVVlUTEFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTA1CWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfYW1kNjQuZGViClFDdVpWMjVONlZ1NEY3ajB3aWszRmYweEtSc2ViTmU4VG5uVmp1emN1NVhoaTRmeDVOOHVRV2lwYlNSYmxYckQzRGRVOTVyUGRhSHE1c0lsNG1QWkNRPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_amd64.deb"
     },
     "linux-x86_64-rpm": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0NYcVNRS29wSEZkRGZBcHRCUjUwTE5UcGJVS2o1eldJREhjT2Q2MDdzSitHQUpLUFRiLzRMa1F0d1VOajJ0NTdFbzFVakNjeExQVnkrN3dBL1dVdncwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODc3CWZpbGU6U2hpZWxkIE9wdGltaXplci0yLjIuMy0xLng4Nl82NC5ycG0KNm9uT25iMWlkbGdic3ZyZUl0ZDlwQkJGUEpqMlJpKzNrNkt6cGJZQkVLL0h6S2NEOVNvZ3ZxeWZNTnNQWmFPRERldWJqOFJTdy9YeEJXOEJ6ME9CQmc9PQo=",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer-2.2.3-1.x86_64.rpm"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0o0Y0h5ZDRRNy8xaXdCT05qUXNlOEp1TTVqRnVXUi9MOGlnd0pHRFJyOXdtUUdicU42Y2JzbmgySm9NQkRxRnA2eUtaeElWU0Q5NmJSTWxSbGVPMWdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTA1CWZpbGU6U2hpZWxkIE9wdGltaXplci0yLjIuMTAtMS54ODZfNjQucnBtCmhYRTMzczl0Q0VtcjJzY2FPWVlPZTlBcDR6K1RuaXdUK21RK09udy9qdWNmRUdxdGI1L05WYW51MzNzZktLdFAzZEpYRXhXc0d6UDFNdWN1TE1WN0FBPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer-2.2.10-1.x86_64.rpm"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05KcG9selNtRkNvWEdhdFQ3Sk04UlV1Z0d5cm1WTklaZ1E3ZHJNWHJ2dExJNDFqLzdrTmtnSm1BVTRRR2crVkk1aHpYdjczYmQyRDNzc09JRGFxVndJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTUyCWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Ck9GR2FIVUtVU2lBV2YveU9oOUtibUI5UXFtUi8wU04zcHdveEZRK3BVbmoxUmlFWk1oRkJPSDY2UWIwcG04aEJ5ZkpVdFlqdHVoTVMwWUtXRnYwaUJRPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_universal.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05KcG9selNtRkNvWEdhdFQ3Sk04UlV1Z0d5cm1WTklaZ1E3ZHJNWHJ2dExJNDFqLzdrTmtnSm1BVTRRR2crVkk1aHpYdjczYmQyRDNzc09JRGFxVndJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTUyCWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Ck9GR2FIVUtVU2lBV2YveU9oOUtibUI5UXFtUi8wU04zcHdveEZRK3BVbmoxUmlFWk1oRkJPSDY2UWIwcG04aEJ5ZkpVdFlqdHVoTVMwWUtXRnYwaUJRPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_universal.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05KcG9selNtRkNvWEdhdFQ3Sk04UlV1Z0d5cm1WTklaZ1E3ZHJNWHJ2dExJNDFqLzdrTmtnSm1BVTRRR2crVkk1aHpYdjczYmQyRDNzc09JRGFxVndJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTUyCWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Ck9GR2FIVUtVU2lBV2YveU9oOUtibUI5UXFtUi8wU04zcHdveEZRK3BVbmoxUmlFWk1oRkJPSDY2UWIwcG04aEJ5ZkpVdFlqdHVoTVMwWUtXRnYwaUJRPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_universal.app.tar.gz"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05KcG9selNtRkNvWEdhdFQ3Sk04UlV1Z0d5cm1WTklaZ1E3ZHJNWHJ2dExJNDFqLzdrTmtnSm1BVTRRR2crVkk1aHpYdjczYmQyRDNzc09JRGFxVndJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTUyCWZpbGU6U2hpZWxkIE9wdGltaXplci5hcHAudGFyLmd6Ck9GR2FIVUtVU2lBV2YveU9oOUtibUI5UXFtUi8wU04zcHdveEZRK3BVbmoxUmlFWk1oRkJPSDY2UWIwcG04aEJ5ZkpVdFlqdHVoTVMwWUtXRnYwaUJRPT0K",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_universal.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0VTWDBiTjF0NzRwd0RCcjlITytucE0wYldwS2lhVUpmVUR3N2JFMzFqSFd2TU1nVnlRZUl6T2JwS0hLTkVGaW9saitna3dCaVhubUptUzFEa241YndBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODkxCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM194NjRfZW4tVVMubXNpClN0M0FBYktkcEZoTHJuY01oU2Z4VktrVkdTdzdSMWc5RHFFM2UxRUh2ZXZWZE5BUlFPemp4bENHWkZxUWV1bWUxeGlvY1BiVHNqYmVSdnRqM29qdENnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_x64_en-US.msi"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0xGUnhreW9JSy9vQk00MzZMakZRUk1sNFl3S282NWpSd2wyRUVXM09Tb1dVak5wcnU1LzVmbEs3eU5NcDlhNHFJM3VDMDFkMHJUUDdiN1dmZlkrOHdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTkzCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfeDY0X2VuLVVTLm1zaQpweW1PUWtkd2NRVTlkbFd1ZU4xdDZ3em5sNzhiVmJjdGpzY2NVRFV4ZjVrWEZWbnZ0emtValdZejMvSXBCQkZETWl5bkRTcGNKK2t1WTg1YXA3WVlBQT09Cg==",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_x64_en-US.msi"
     },
     "windows-x86_64-msi": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0VTWDBiTjF0NzRwd0RCcjlITytucE0wYldwS2lhVUpmVUR3N2JFMzFqSFd2TU1nVnlRZUl6T2JwS0hLTkVGaW9saitna3dCaVhubUptUzFEa241YndBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODkxCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM194NjRfZW4tVVMubXNpClN0M0FBYktkcEZoTHJuY01oU2Z4VktrVkdTdzdSMWc5RHFFM2UxRUh2ZXZWZE5BUlFPemp4bENHWkZxUWV1bWUxeGlvY1BiVHNqYmVSdnRqM29qdENnPT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_x64_en-US.msi"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0xGUnhreW9JSy9vQk00MzZMakZRUk1sNFl3S282NWpSd2wyRUVXM09Tb1dVak5wcnU1LzVmbEs3eU5NcDlhNHFJM3VDMDFkMHJUUDdiN1dmZlkrOHdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTkzCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfeDY0X2VuLVVTLm1zaQpweW1PUWtkd2NRVTlkbFd1ZU4xdDZ3em5sNzhiVmJjdGpzY2NVRFV4ZjVrWEZWbnZ0emtValdZejMvSXBCQkZETWl5bkRTcGNKK2t1WTg1YXA3WVlBQT09Cg==",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_x64_en-US.msi"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN05LOFphOU0vdncralp6VERsMzdEYXNNMjhEWnFLNkdNSjcwWXlScXRaeDVKdmd6Y0I4bEoyQ3ZVTFl1bSsvbXQrQVJuZWJ0U0tCQ2NOTE1ja2tkMGdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NTYyODkxCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuM194NjQtc2V0dXAuZXhlClcvdHRWR1VpY2VTOUFwREtkaXVmRnFGWkZOOWZWVm1xa3VOMEdLOUhYUXFycVNsVE9mcUVDSDFYYThvZVZQU2s0K3lrcWtodXhRaE5HTXoyUmQxWEN3PT0K",
-      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.3/Shield.Optimizer_2.2.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScmtVUU5KWnFnN0lYazBwRVVidG1wZ3pRVThBMy9jRXlhZGVkUmJNdlBaWXY5VkhvYnVDcGFmTHFkNkRzMFNSS2JsdWJqQklVVUdoem9qNVA3UXVDOVV0a3lxSVV1a1FvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3Nzc1NTkzCWZpbGU6U2hpZWxkIE9wdGltaXplcl8yLjIuMTBfeDY0LXNldHVwLmV4ZQpQS2VOT3RHQVh6TTlEUk44ajdMOVJHSUxLa0pSd3lDL291ZVp3R2lUQWRSM295YTRVUlVjcTlmRUovUkc3b3VxMytacEtON1c4empJY0Nsb2I5UkpBQT09Cg==",
+      "url": "https://github.com/LosLonelyDevs/shield_optimizer/releases/download/v2-2.2.10/Shield.Optimizer_2.2.10_x64-setup.exe"
     }
   }
 }
