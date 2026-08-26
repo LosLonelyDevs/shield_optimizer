@@ -6,7 +6,15 @@
 
   let { serial }: { serial: string } = $props();
 
-  type InstallOutcome = { ok: boolean; message: string; hint: string | null };
+  type InstallOutcome = {
+    ok: boolean;
+    message: string;
+    hint: string | null;
+    /// Set when Android refused the downgrade even with `-d`: the package the
+    /// user would have to remove to force the older APK on. null when there's
+    /// no package id to act on, in which case no fallback is offered.
+    blockedPackage: string | null;
+  };
 
   /// Path of the APK currently installing (null when idle) — per-path so a
   /// multi-APK list only shows the spinner on the row actually installing.
@@ -130,20 +138,30 @@
   }
 
   /// Install one APK. `refresh` is turned off by the Install-all loop, which
-  /// re-queries once at the end instead of after every file.
-  async function installApkPath(path: string, refresh = true): Promise<boolean> {
+  /// re-queries once at the end instead of after every file. `allowDowngrade`
+  /// adds `-d` up front for rows we already know are downgrades; anything else
+  /// gets the backend's automatic retry.
+  async function installApkPath(
+    path: string,
+    refresh = true,
+    allowDowngrade = false,
+  ): Promise<boolean> {
     sideloadBusy = path;
     lastInstalledPath = path;
     delete installResults[path];
     // A single install invalidates the previous run's tally.
     if (!batchRunning) batchSummary = null;
     try {
-      const r = await api.installApk(serial, path, true);
+      const r = await api.installApk(serial, path, true, allowDowngrade);
       // Friendly summary; the raw adb output is kept for the details line.
       installResults[path] = {
         ok: r.ok,
-        message: r.ok ? "Installed." : installFailureSummary(r.message),
+        message: r.ok ? (r.downgraded ? "Downgraded." : "Installed.") : installFailureSummary(r.message),
         hint: r.hint,
+        // The backend only decodes the package when it's needed here.
+        blockedPackage: r.downgrade_blocked
+          ? (r.package ?? discoveredApks.find((a) => a.path === path)?.package ?? null)
+          : null,
       };
       // Refresh so the row's chip flips to the newly-installed version (best
       // effort — a failure here shouldn't clobber the success message).
@@ -156,11 +174,48 @@
       }
       return r.ok;
     } catch (e) {
-      installResults[path] = { ok: false, message: String(e), hint: null };
+      installResults[path] = { ok: false, message: String(e), hint: null, blockedPackage: null };
       return false;
     } finally {
       sideloadBusy = null;
     }
+  }
+
+  /// Last resort when Android refuses the downgrade even with `-d` — it only
+  /// honors that flag for debuggable apps, so on a retail build the installed
+  /// copy has to go first. That takes the app's data with it, hence the ask.
+  async function uninstallThenInstall(path: string, pkg: string | null) {
+    if (!pkg) return;
+    if (
+      !confirm(
+        `Uninstall ${pkg} from the device, then install this APK?\n\nAndroid won't replace a newer version in place, so the installed copy has to be removed first. Its saved data and sign-in go with it.`,
+      )
+    )
+      return;
+    sideloadBusy = path;
+    try {
+      const r = await api.uninstallPackage(serial, pkg);
+      if (!r.ok) {
+        installResults[path] = {
+          ok: false,
+          message: `Uninstall failed: ${r.message}`,
+          hint: null,
+          blockedPackage: null,
+        };
+        return;
+      }
+    } catch (e) {
+      installResults[path] = {
+        ok: false,
+        message: `Uninstall failed: ${e}`,
+        hint: null,
+        blockedPackage: null,
+      };
+      return;
+    } finally {
+      sideloadBusy = null;
+    }
+    await installApkPath(path);
   }
 
   /// Install every discovered APK, in list order, one at a time. Each row keeps
@@ -210,7 +265,7 @@
     const m = raw.match(/INSTALL_FAILED_[A-Z_]+|INSTALL_PARSE_FAILED[A-Z_]*/);
     if (m) {
       if (m[0].includes("ALREADY_EXISTS")) return "Already installed (same version).";
-      if (m[0].includes("VERSION_DOWNGRADE")) return "A newer version is already installed.";
+      if (m[0].includes("VERSION_DOWNGRADE")) return "Downgrade refused — a newer version is installed.";
       if (m[0].includes("NO_MATCHING_ABIS")) return "Wrong CPU architecture for this device.";
       if (m[0].includes("OLDER_SDK")) return "Needs a newer Android version than this device.";
       return `Install failed (${m[0]}).`;
@@ -256,7 +311,7 @@
       return { kind: "upgrade", disabled, label: `UPGRADE${arrow}${suffix}`, button: "Upgrade" };
     }
     if (apkCode < devCode) {
-      return { kind: "downgrade", disabled, label: `DOWNGRADE${arrow}${suffix}`, button: "Reinstall" };
+      return { kind: "downgrade", disabled, label: `DOWNGRADE${arrow}${suffix}`, button: "Downgrade" };
     }
     // Equal versionCode. The chip describes the device, so the version it names
     // is always the device's — never the APK's. A build that bumps versionName
@@ -358,7 +413,9 @@
   </div>
   <p class="muted small">
     Pick a file directly, or point at a folder and we'll list every APK inside.
-    Either way, install runs <code>adb install -r &lt;file&gt;</code>.
+    Either way, install runs <code>adb install -r &lt;file&gt;</code> — and
+    <code>-d</code> on top when the APK is older than what's on the device, so
+    downgrades go through where Android allows them.
   </p>
 
   {#if discoveredFolder && discoveredApks.length > 0}
@@ -406,18 +463,18 @@
             </div>
             <button
               class="small-action primary"
-              onclick={() => installApkPath(apk.path)}
+              onclick={() => installApkPath(apk.path, true, status.kind === "downgrade")}
               disabled={busy}
             >
-              {sideloadBusy === apk.path ? "Installing…" : status.button}
+              {sideloadBusy === apk.path
+                ? status.kind === "downgrade"
+                  ? "Downgrading…"
+                  : "Installing…"
+                : status.button}
             </button>
           </div>
           {#if installResults[apk.path]}
-            {@const res = installResults[apk.path]}
-            <div class="install-result" class:ok={res.ok} class:bad={!res.ok}>
-              <span>{res.ok ? "✓" : "✕"} {res.message}</span>
-              {#if res.hint}<span class="muted small"> — {res.hint}</span>{/if}
-            </div>
+            {@render resultLine(apk.path, installResults[apk.path])}
           {/if}
         </li>
       {/each}
@@ -435,13 +492,26 @@
     <div class="install-result bad"><span>✕ {scanError}</span></div>
   {/if}
 
-  {#if looseResult}
-    <div class="install-result" class:ok={looseResult.ok} class:bad={!looseResult.ok}>
-      <span>{looseResult.ok ? "✓" : "✕"} {looseResult.message}</span>
-      {#if looseResult.hint}<span class="muted small"> — {looseResult.hint}</span>{/if}
-    </div>
+  {#if looseResult && lastInstalledPath}
+    {@render resultLine(lastInstalledPath, looseResult)}
   {/if}
 </div>
+
+{#snippet resultLine(path: string, res: InstallOutcome)}
+  <div class="install-result" class:ok={res.ok} class:bad={!res.ok}>
+    <span>{res.ok ? "✓" : "✕"} {res.message}</span>
+    {#if res.hint}<span class="muted small"> — {res.hint}</span>{/if}
+    {#if res.blockedPackage}
+      <button
+        class="small-action"
+        onclick={() => uninstallThenInstall(path, res.blockedPackage)}
+        disabled={busy}
+      >
+        Uninstall &amp; install
+      </button>
+    {/if}
+  </div>
+{/snippet}
 
 <div class="card section-card">
   <div class="shizuku-row">
@@ -623,6 +693,10 @@
   }
   .install-result.ok { color: var(--ok); }
   .install-result.bad { color: var(--warn); }
+  .install-result button {
+    margin-left: 0.6rem;
+    vertical-align: baseline;
+  }
   .apk-name {
     font-family: ui-monospace, monospace;
     font-size: 0.88rem;

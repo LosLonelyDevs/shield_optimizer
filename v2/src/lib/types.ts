@@ -180,6 +180,14 @@ export interface InstallApkResult {
   path: string;
   message: string;
   hint: string | null;
+  /// Package id from the APK's manifest — only read when `downgrade_blocked`,
+  /// which is the one case the UI needs it and may not already have it.
+  package: string | null;
+  /// The install used `adb install -d` (allow downgrade).
+  downgraded: boolean;
+  /// Android refused the downgrade even with `-d`. The only route left is
+  /// uninstall-then-install, which erases the app's data.
+  downgrade_blocked: boolean;
 }
 
 export interface DiscoveredApk {

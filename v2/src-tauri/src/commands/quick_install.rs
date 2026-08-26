@@ -338,6 +338,11 @@ pub async fn install_quick_app(
         path: format!("{} ({})", app.name, url),
         message,
         hint,
+        // The catalog always resolves the newest build, so a downgrade never
+        // applies here.
+        package: None,
+        downgraded: false,
+        downgrade_blocked: false,
     })
 }
 

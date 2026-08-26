@@ -17,6 +17,24 @@ When you add a new section, put it at the top; older releases go below.
 
 ---
 
+## v2-2.2.10
+
+- **Downgrades actually install now.** The Install APK list has always been able
+  to *tell* you an APK was older than what's on the device — it labelled the row
+  DOWNGRADE — but the install itself ran plain `adb install -r`, which Android
+  rejects with `INSTALL_FAILED_VERSION_DOWNGRADE`. Installs now add `-d` when
+  the APK is the older one, and any install that trips the downgrade guard gets
+  one automatic retry with the flag set, so a file picked outside the scanned
+  folder (where there's no version to compare) works the same way. Downgrade
+  rows say "Downgrade" on the button and "Downgraded." on success.
+- **A way through when Android still says no.** `-d` only works for debuggable
+  apps, so on a retail device most downgrades fail even with it. That result now
+  offers an **Uninstall & install** button — it removes the installed copy and
+  installs the older APK, after warning that the app's data and sign-in go with
+  it.
+
+---
+
 ## v2-2.2.9
 
 - **Fixed "Last used" reporting almost every app as unused.** `dumpsys

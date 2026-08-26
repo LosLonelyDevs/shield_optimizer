@@ -191,8 +191,11 @@ export const api = {
   openSettings: (serial: string) =>
     invoke<SendTextResult>("open_settings", { serial }),
 
-  installApk: (serial: string, apkPath: string, reinstall = true) =>
-    invoke<InstallApkResult>("install_apk", { serial, apkPath, reinstall }),
+  /// `allowDowngrade` adds `adb install -d`. The backend also retries with it
+  /// automatically when a plain install hits INSTALL_FAILED_VERSION_DOWNGRADE,
+  /// so passing it up front only saves the doomed first attempt.
+  installApk: (serial: string, apkPath: string, reinstall = true, allowDowngrade = false) =>
+    invoke<InstallApkResult>("install_apk", { serial, apkPath, reinstall, allowDowngrade }),
   backupApk: (serial: string, pkg: string, destDir: string) =>
     invoke<BackupApkResult>("backup_apk", { serial, package: pkg, destDir }),
   cloneApp: (sourceSerial: string, targetSerial: string, pkg: string) =>
